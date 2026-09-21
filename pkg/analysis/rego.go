@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/open-policy-agent/opa/rego"
 	"github.com/raaya/pkg/analysis/policies"
 	"github.com/raaya/pkg/graph"
-	"github.com/open-policy-agent/opa/rego"
 )
 
 type EvaluationResult struct {
@@ -35,6 +35,27 @@ func EvaluateGraph(ctx context.Context, sg *graph.SecurityGraph) (*EvaluationRes
 		return nil, fmt.Errorf("failed to evaluate policy: %w", err)
 	}
 
+	res := &EvaluationResult{
+		Allowed:    true,
+		Violations: make([]string, 0),
+	}
+
+	// Process the direct array output from OPA (data.raaya.security.violations)
+	if len(results) > 0 && len(results[0].Expressions) > 0 {
+		if rawViolations, ok := results[0].Expressions[0].Value.([]interface{}); ok {
+			for _, v := range rawViolations {
+				res.Violations = append(res.Violations, fmt.Sprintf("%v", v))
+			}
+		}
+	}
+
+	// Flag as unallowed if any violations were returned
+	if len(res.Violations) > 0 {
+		res.Allowed = false
+	}
+
+	return res, nil
+}
 	res := &EvaluationResult{
 		Allowed:    true,
 		Violations: make([]string, 0),
