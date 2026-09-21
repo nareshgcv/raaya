@@ -27,7 +27,7 @@ jobs:
 
       - name: Run ape Scan
         run: |
-          ./bin/ape scan --sarif > ape-results.sarif
+          ./bin/raaya scan --sarif > ape-results.sarif
         continue-on-error: true
 
       - name: Upload SARIF to GitHub Code Scanning
