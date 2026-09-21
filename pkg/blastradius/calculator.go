@@ -10,11 +10,17 @@ func CalculateTransitiveReach(sg *graph.SecurityGraph, startNodeID string) []str
 
 	var dfs func(currID string)
 	dfs = func(currID string) {
+		if visited[currID] {
+			return
+		}
 		visited[currID] = true
+
 		for _, edge := range sg.Edges {
-			if edge.SourceID == currID && !visited[edge.TargetID] {
-				reachable = append(reachable, edge.TargetID)
-				dfs(edge.TargetID)
+			if edge.SourceID == currID {
+				if !visited[edge.TargetID] {
+					reachable = append(reachable, edge.TargetID)
+					dfs(edge.TargetID)
+				}
 			}
 		}
 	}
