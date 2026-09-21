@@ -27,21 +27,26 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sg := graph.NewSecurityGraph()
 
-			// Parse MCP Config if provided/present
+			// 1. Scan codebase AST for @tool annotations
+			if err := discovery.ScanDirectoryAnnotations(".", sg); err != nil {
+				return fmt.Errorf("failed scanning code annotations: %w", err)
+			}
+
+			// 2. Parse MCP Configurations if provided
 			if configPath != "" {
 				if err := discovery.ParseMCPConfig(configPath, sg); err != nil {
-					return fmt.Errorf("failed to process mcp config: %w", err)
+					return fmt.Errorf("failed processing mcp config: %w", err)
 				}
 			}
 
-			// Run local Rego analysis
+			// 3. Run local Rego analysis
 			ctx := context.Background()
 			res, err := analysis.EvaluateGraph(ctx, sg)
 			if err != nil {
 				return fmt.Errorf("failed to analyze graph: %w", err)
 			}
 
-			// Output Results
+			// 4. Output Results
 			if sarifOutput {
 				sarifData, err := reporter.GenerateSARIF(res)
 				if err != nil {
@@ -49,6 +54,7 @@ func main() {
 				}
 				fmt.Println(string(sarifData))
 			} else {
+				reporter.RenderTerminalTree(sg)
 				fmt.Printf("Scan complete. Allowed: %v, Violations: %d\n", res.Allowed, len(res.Violations))
 				for _, v := range res.Violations {
 					fmt.Printf(" - [VIOLATION] %s\n", v)
