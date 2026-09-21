@@ -45,7 +45,7 @@ func GenerateSARIF(evalResult *analysis.EvaluationResult) ([]byte, error) {
 	}
 
 	log := SARIFLog{
-		Version: "2.1.0",
+		Version: "0.1.0",
 		Schema:  "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
 		Runs: []Run{
 			{
