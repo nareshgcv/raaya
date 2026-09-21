@@ -52,7 +52,7 @@ raaya scan . --format=sarif --output=results.sarif
 | mcp.json         |   |                        |    |                          |    | Terminal Summary |
 | tool_defs.py     |-->| SecurityGraph Builder  |--->| OPA / Rego Evaluator     |--->| SARIF Report     |
 | agent_prompts.md |   | (Nodes & Capabilities) |    | Native Rule Checking     |    | Terminal Graph   |
-+------------------+   +---------------- +--------------------------+    +------------------+ 
++------------------+   +--------------------- +  +--------------------------+    +------------------+ 
 
 1.Graph Construction: ape parses configurations (mcp.json, agent descriptors, tool code annotations) into an internal SecurityGraph.
 
