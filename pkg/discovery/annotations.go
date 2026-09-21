@@ -37,34 +37,40 @@ func parseFileForTools(filePath string, sg *graph.SecurityGraph) error {
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
+	pendingTool := false
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
 
 		if matches := toolDecoratorRegex.FindStringSubmatch(line); len(matches) > 0 {
-			toolName := matches[2]
-			if toolName == "" && scanner.Scan() {
-				lineNum++
-				funcLine := scanner.Text()
-				if funcMatches := funcDefRegex.FindStringSubmatch(funcLine); len(funcMatches) > 1 {
-					toolName = funcMatches[1]
-				}
+			if len(matches) > 2 && matches[2] != "" {
+				addToolNode(matches[2], filePath, lineNum, sg)
+			} else {
+				pendingTool = true // Look for function definition on next line(s)
 			}
+			continue
+		}
 
-			if toolName != "" {
-				nodeID := "tool:" + toolName
-				sg.AddNode(&graph.Node{
-					ID:   nodeID,
-					Type: graph.NodeTool,
-					Name: toolName,
-					Location: &graph.SourceLocation{
-						FilePath:  filePath,
-						StartLine: lineNum,
-					},
-				})
+		if pendingTool {
+			if funcMatches := funcDefRegex.FindStringSubmatch(line); len(funcMatches) > 1 {
+				addToolNode(funcMatches[1], filePath, lineNum, sg)
+				pendingTool = false
 			}
 		}
 	}
 	return scanner.Err()
+}
+
+func addToolNode(name, path string, line int, sg *graph.SecurityGraph) {
+	nodeID := "tool:" + name
+	sg.AddNode(&graph.Node{
+		ID:   nodeID,
+		Type: graph.NodeTool,
+		Name: name,
+		Location: &graph.SourceLocation{
+			FilePath:  path,
+			StartLine: line,
+		},
+	})
 }
