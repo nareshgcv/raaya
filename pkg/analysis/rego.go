@@ -22,7 +22,7 @@ func EvaluateGraph(ctx context.Context, sg *graph.SecurityGraph) (*EvaluationRes
 
 	// Query the violations rule directly
 	query, err := rego.New(
-		rego.Query("data.ape.security.violations"),
+		rego.Query("data.raaya.security.violations"),
 		rego.Module("default.rego", string(regoCode)),
 	).PrepareForEval(ctx)
 
