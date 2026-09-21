@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ape-sec/ape/pkg/graph"
+	"github.com/raaya/pkg/graph"
 )
 
 func RenderTerminalTree(sg *graph.SecurityGraph) {
-	fmt.Println("\n=== APE Dependency Graph ===")
+	fmt.Println("\n=== RAAYA Dependency Graph ===")
 
 	for _, node := range sg.Nodes {
 		if node.Type == graph.NodeAgent || node.Type == graph.NodeServer {
