@@ -27,10 +27,10 @@ jobs:
 
       - name: Run ape Scan
         run: |
-          ./bin/raaya scan --sarif > ape-results.sarif
+          ./bin/raaya scan --sarif > raaya-results.sarif
         continue-on-error: true
 
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ape-results.sarif
+          sarif_file: raaya-results.sarif
