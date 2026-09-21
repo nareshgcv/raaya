@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ape-sec/ape/pkg/graph"
+	"github.com/raaya/pkg/graph"
 )
 
 type MCPServerConfig struct {
