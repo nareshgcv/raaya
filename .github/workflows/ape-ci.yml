@@ -23,7 +23,7 @@ jobs:
           go-version: '1.22'
 
       - name: Build ape CLI
-        run: go build -o bin/ape ./cmd/ape
+        run: go build -o bin/raaya ./cmd/raaya
 
       - name: Run ape Scan
         run: |
