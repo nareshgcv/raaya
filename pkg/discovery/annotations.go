@@ -2,33 +2,40 @@ package discovery
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/raaya/pkg/graph"
+	"raaya/pkg/graph"
 )
 
 var (
-	toolDecoratorRegex = regexp.MustCompile(`@(tool|mcp_tool)\((?:name=["']([^"']+)["'])?`)
-	funcDefRegex       = regexp.MustCompile(`def\s+([a-zA-Z0-9_]+)\(`)
+	pyToolPattern = regexp.MustCompile(`@(?:mcp\.tool|tool)\((?:name=["']([^"']+)["'])?\)`)
+	pyDefPattern  = regexp.MustCompile(`def\s+([a-zA-Z0-9_]+)\s*\(`)
+	tsToolPattern = regexp.MustCompile(`(?:server|mcp)\.tool\s*\(\s*["']([^"']+)["']`)
 )
 
-func ScanDirectoryAnnotations(root string, sg *graph.SecurityGraph) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+// ScanAnnotations traverses a directory for Python/TypeScript files and extracts tool declarations
+func ScanAnnotations(rootDir string, sg *graph.SecurityGraph) error {
+	return filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			return err
+			if info != nil && (info.Name() == "node_modules" || info.Name() == ".venv" || info.Name() == ".git") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
-		if strings.HasSuffix(path, ".py") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".js") {
-			return parseFileForTools(path, sg)
+		ext := filepath.Ext(path)
+		if ext == ".py" || ext == ".ts" || ext == ".js" {
+			return parseFileTools(path, ext, sg)
 		}
 		return nil
 	})
 }
 
-func parseFileForTools(filePath string, sg *graph.SecurityGraph) error {
+func parseFileTools(filePath, ext string, sg *graph.SecurityGraph) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -37,40 +44,52 @@ func parseFileForTools(filePath string, sg *graph.SecurityGraph) error {
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
-	pendingTool := false
+	var lastDecoratorName string
 
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
 
-		if matches := toolDecoratorRegex.FindStringSubmatch(line); len(matches) > 0 {
-			if len(matches) > 2 && matches[2] != "" {
-				addToolNode(matches[2], filePath, lineNum, sg)
-			} else {
-				pendingTool = true // Look for function definition on next line(s)
+		if ext == ".py" {
+			if matches := pyToolPattern.FindStringSubmatch(line); len(matches) > 0 {
+				if len(matches) > 1 && matches[1] != "" {
+					lastDecoratorName = matches[1]
+				} else {
+					lastDecoratorName = "pending_function"
+				}
+				continue
 			}
-			continue
-		}
 
-		if pendingTool {
-			if funcMatches := funcDefRegex.FindStringSubmatch(line); len(funcMatches) > 1 {
-				addToolNode(funcMatches[1], filePath, lineNum, sg)
-				pendingTool = false
+			if lastDecoratorName != "" {
+				if defMatches := pyDefPattern.FindStringSubmatch(line); len(defMatches) > 1 {
+					toolName := lastDecoratorName
+					if toolName == "pending_function" {
+						toolName = defMatches[1]
+					}
+					toolID := fmt.Sprintf("tool:%s:%s", filePath, toolName)
+					sg.AddNode(graph.AssetNode{
+						ID:         toolID,
+						Kind:       graph.KindToolDef,
+						Name:       toolName,
+						SourceFile: filePath,
+						LineNumber: lineNum,
+					})
+					lastDecoratorName = ""
+				}
+			}
+		} else if ext == ".ts" || ext == ".js" {
+			if matches := tsToolPattern.FindStringSubmatch(line); len(matches) > 1 {
+				toolName := matches[1]
+				toolID := fmt.Sprintf("tool:%s:%s", filePath, toolName)
+				sg.AddNode(graph.AssetNode{
+					ID:         toolID,
+					Kind:       graph.KindToolDef,
+					Name:       toolName,
+					SourceFile: filePath,
+					LineNumber: lineNum,
+				})
 			}
 		}
 	}
 	return scanner.Err()
-}
-
-func addToolNode(name, path string, line int, sg *graph.SecurityGraph) {
-	nodeID := "tool:" + name
-	sg.AddNode(&graph.Node{
-		ID:   nodeID,
-		Type: graph.NodeTool,
-		Name: name,
-		Location: &graph.SourceLocation{
-			FilePath:  path,
-			StartLine: line,
-		},
-	})
 }
