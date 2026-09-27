@@ -1,4 +1,3 @@
-// cmd/raaya/subcmds/hook.go
 package subcmds
 
 import (
@@ -8,28 +7,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const preCommitScript = `#!/bin/sh
-# Installed by Raaya
-raaya check
-`
+var HookCmd = &cobra.Command{
+	Use:   "hook",
+	Short: "Install Git pre-commit hook for automated scanning",
+	Run: func(cmd *cobra.Command, args []string) {
+		hookScript := "#!/bin/sh\nraaya check\n"
+		path := ".git/hooks/pre-commit"
 
-func NewHookCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "hook",
-		Short: "Manage Git hooks",
-		Subcommands: []*cobra.Command{
-			{
-				Use:   "install",
-				Short: "Install local git pre-commit hook automatically",
-				RunE: func(cmd *cobra.Command, args []string) error {
-					hookPath := ".git/hooks/pre-commit"
-					if err := os.WriteFile(hookPath, []byte(preCommitScript), 0755); err != nil {
-						return fmt.Errorf("failed installing git hook: %w", err)
-					}
-					fmt.Println("✓ Successfully installed local git pre-commit hook at .git/hooks/pre-commit")
-					return nil
-				},
-			},
-		},
-	}
+		err := os.WriteFile(path, []byte(hookScript), 0755)
+		if err != nil {
+			fmt.Printf("❌ Failed to install Git hook: %v\n", err)
+			return
+		}
+		fmt.Println("✅ Pre-commit hook installed successfully at .git/hooks/pre-commit")
+	},
 }
