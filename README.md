@@ -275,5 +275,190 @@ Raaya follows a simple local analysis pipeline:
 └──────────┬──────────┘
            │
            ▼
-┌────
+┌─────────────────────┐
+│ Security Graph      │
+│                     │
+│ AGENT               │
+│   ↓                 │
+│ MODEL               │
+│   ↓                 │
+│ SERVER              │
+│   ↓                 │
+│ TOOL / CAPABILITY   │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Policy Engine       │
+│                     │
+│ Native Rules        │
+│ OPA / Rego          │
+│                     │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Results             │
+│                     │
+│ Terminal            │
+│ SARIF               │
+│ Graph / Mermaid     │
+└─────────────────────┘
 ```
+
+Everything required for the static analysis runs locally.
+
+---
+
+# 🔐 Why Raaya?
+
+AI applications increasingly combine agents, models, MCP servers, tools, credentials, and runtime capabilities.
+
+A traditional source-code scanner may identify a hardcoded credential.
+
+A configuration scanner may identify an open endpoint.
+
+But the security question is often **relational**:
+
+> Which agent can reach which tool, through which server, with which permissions?
+
+Raaya models those relationships as a Security Graph and evaluates policies against the resulting capability graph.
+
+```text
+Agent
+  │
+  ├── Model
+  │
+  ├── MCP Server
+  │      │
+  │      ├── Tool A
+  │      ├── Tool B
+  │      └── Tool C
+  │
+  └── Runtime Capabilities
+```
+
+This allows Raaya to detect risks that depend on the **relationship between multiple AI assets**, rather than examining each file in isolation.
+
+---
+
+# 🤖 Policy Engine
+
+Raaya's built-in checks require no policy configuration.
+
+For teams that need custom security requirements, Raaya can additionally evaluate policies using OPA/Rego.
+
+This gives developers a simple progression:
+
+```text
+Zero Configuration
+       │
+       ▼
+Built-in Rules
+       │
+       ▼
+Custom Policies
+       │
+       ▼
+CI/CD Enforcement
+```
+
+Developers can start with:
+
+```bash
+raaya check
+```
+
+and introduce custom policy enforcement later as their AI infrastructure grows.
+
+---
+
+# 📦 CI/CD Usage
+
+A typical CI pipeline can run:
+
+```bash
+raaya check --format sarif > results.sarif
+```
+
+and fail the pipeline when configured severity thresholds are exceeded.
+
+Recommended workflow:
+
+```text
+Developer
+    │
+    ▼
+raaya check
+    │
+    ▼
+Fix findings
+    │
+    ▼
+Git commit
+    │
+    ▼
+Pre-commit hook
+    │
+    ▼
+Pull Request
+    │
+    ▼
+CI / SARIF
+    │
+    ▼
+Production
+```
+
+---
+
+# 🗺️ Roadmap
+
+### Phase 1 — Developer Experience
+
+* [ ] Zero-config native security checks
+* [ ] Human-friendly terminal diagnostics
+* [ ] Stable rule IDs
+* [ ] Line-level findings
+* [ ] Actionable remediation
+* [ ] SARIF output
+* [ ] Git pre-commit integration
+
+### Phase 2 — Security Graph
+
+* [ ] Expanded MCP capability discovery
+* [ ] Agent → model → server → tool relationship analysis
+* [ ] Transitive capability analysis
+* [ ] Risk propagation across dependency paths
+* [ ] Improved graph visualization
+
+### Phase 3 — Policy-as-Code
+
+* [ ] OPA/Rego integration
+* [ ] Custom organization policies
+* [ ] Policy bundles
+* [ ] CI policy enforcement
+* [ ] Security policy testing
+
+---
+
+# ⚡ The 30-Second Workflow
+
+```bash
+# Install
+go install github.com/raaya/raaya/cmd/raaya@latest
+
+# Discover your AI assets
+raaya doctor
+
+# Find security and configuration issues
+raaya check
+
+# Inspect the capability graph
+raaya graph
+
+# Export findings for CI
+raaya check --format sarif > results.sarif
+```
+
+**Raaya turns AI-agent configuration into a security graph you can inspect, analyze, and enforce—without sending your repository to a cloud service.**
