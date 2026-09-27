@@ -10,19 +10,14 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "raaya",
-	Short: "Raaya Policy Engine — Local-first security & dependency graph analysis for AI agents",
+	Short: "Raaya — Local-first security engine for AI agents & MCP",
 }
 
 func main() {
-	rootCmd.AddCommand(
-		subcmds.NewCheckCmd(),
-		subcmds.NewGraphCmd(),
-		subcmds.NewDoctorCmd(),
-		subcmds.NewHookCmd(),
-	)
+	rootCmd.AddCommand(subcmds.CheckCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }
