@@ -1,44 +1,25 @@
 package analysis
 
-import "github.com/raaya/pkg/graph"
+import (
+	"raaya/pkg/analysis/rules"
+)
 
-type GraphDelta struct {
-	AddedNodes   []*graph.Node `json:"added_nodes"`
-	RemovedNodes []*graph.Node `json:"removed_nodes"`
-	AddedEdges   []*graph.Edge `json:"added_edges"`
-	RemovedEdges []*graph.Edge `json:"removed_edges"`
-}
-
-func ComputeDelta(base, head *graph.SecurityGraph) *GraphDelta {
-	delta := &GraphDelta{
-		AddedNodes:   make([]*graph.Node, 0),
-		RemovedNodes: make([]*graph.Node, 0),
-		AddedEdges:   make([]*graph.Edge, 0),
-		RemovedEdges: make([]*graph.Edge, 0),
+// ComputeDelta filters current findings against a baseline set of existing findings
+func ComputeDelta(currentFindings []rules.Finding, baselineFindings []rules.Finding) []rules.Finding {
+	baselineMap := make(map[string]bool)
+	for _, f := range baselineFindings {
+		// Unique fingerprinted key for each issue
+		key := f.RuleID + ":" + f.FilePath + ":" + f.AssetID
+		baselineMap[key] = true
 	}
 
-	for id, node := range head.Nodes {
-		if _, exists := base.Nodes[id]; !exists {
-			delta.AddedNodes = append(delta.AddedNodes, node)
+	var newFindings []rules.Finding
+	for _, f := range currentFindings {
+		key := f.RuleID + ":" + f.FilePath + ":" + f.AssetID
+		if !baselineMap[key] {
+			newFindings = append(newFindings, f)
 		}
 	}
 
-	for id, node := range base.Nodes {
-		if _, exists := head.Nodes[id]; !exists {
-			delta.RemovedNodes = append(delta.RemovedNodes, node)
-		}
-	}
-
-	baseEdgeMap := make(map[string]bool)
-	for _, edge := range base.Edges {
-		baseEdgeMap[edge.ID] = true
-	}
-
-	for _, edge := range head.Edges {
-		if !baseEdgeMap[edge.ID] {
-			delta.AddedEdges = append(delta.AddedEdges, edge)
-		}
-	}
-
-	return delta
+	return newFindings
 }
