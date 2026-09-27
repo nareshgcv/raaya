@@ -35,6 +35,15 @@ No database. No cloud service. No external security backend.
 # 🚀 Quick Start
 
 ## 1. Install Raaya
+One-command installation
+
+The fastest way to try Raaya:
+
+npx raaya
+
+Or install it with Homebrew:
+
+brew install raaya
 
 ### Install with Go
 
