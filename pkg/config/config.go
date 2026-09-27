@@ -1,40 +1,27 @@
 package config
 
 import (
-	"bufio"
 	"os"
-	"path/filepath"
-	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	IgnoredRules map[string]bool
-	IgnoredPaths []string
+	IgnorePaths []string `yaml:"ignore_paths"`
+	Rules       struct {
+		Disabled []string `yaml:"disabled"`
+	} `yaml:"rules"`
 }
 
-func LoadConfig(workspace string) (*Config, error) {
-	cfg := &Config{
-		IgnoredRules: make(map[string]bool),
-		IgnoredPaths: []string{},
-	}
-
-	// Parse .raayaignore if present
-	ignorePath := filepath.Join(workspace, ".raayaignore")
-	if file, err := os.Open(ignorePath); err == nil {
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			if strings.HasPrefix(line, "RAA") {
-				cfg.IgnoredRules[line] = true
-			} else {
-				cfg.IgnoredPaths = append(cfg.IgnoredPaths, line)
-			}
+func LoadConfig(path string) (*Config, error) {
+	cfg := &Config{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil // Return default empty config if file doesn't exist
 		}
+		return nil, err
 	}
-
-	return cfg, nil
+	err = yaml.Unmarshal(data, cfg)
+	return cfg, err
 }
