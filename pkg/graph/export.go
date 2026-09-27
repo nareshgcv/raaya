@@ -1,54 +1,40 @@
-// pkg/graph/export.go
 package graph
 
 import (
 	"fmt"
-	"io"
 	"strings"
 )
 
-type Graph struct {
-	Agents []AgentNode
-}
+func (g *SecurityGraph) ToMermaid() string {
+	var builder strings.Builder
+	builder.WriteString("graph TD\n")
 
-type AgentNode struct {
-	Name   string
-	Prompt string
-	Tools  []ToolNode
-}
-
-type ToolNode struct {
-	Name     string
-	Server   string
-	RiskTag  string // e.g., "[OK]" or "[⚠️ OVER-PERMISSIONED]"
-}
-
-func RenderASCII(w io.Writer, g Graph) {
-	for _, agent := range g.Agents {
-		fmt.Fprintf(w, "Agent: %s\n", agent.Name)
-		fmt.Fprintf(w, "├── Prompt: %s\n", agent.Prompt)
-		fmt.Fprintln(w, "└── Tools:")
-		for i, tool := range agent.Tools {
-			connector := "├──"
-			if i == len(agent.Tools)-1 {
-				connector = "└──"
-			}
-			fmt.Fprintf(w, "    %s %s/%s %s\n", connector, tool.Server, tool.Name, tool.RiskTag)
-		}
-		fmt.Fprintln(w)
-	}
-}
-
-func RenderMermaid(w io.Writer, g Graph) {
-	fmt.Fprintln(w, "```mermaid")
-	fmt.Fprintln(w, "graph TD")
-	for _, agent := range g.Agents {
-		aID := strings.ReplaceAll(agent.Name, "-", "_")
-		fmt.Fprintf(w, "  %s[%s] --> %s_prompt[%s]\n", aID, agent.Name, aID, agent.Prompt)
-		for _, tool := range agent.Tools {
-			tID := strings.ReplaceAll(tool.Name, "-", "_")
-			fmt.Fprintf(w, "  %s --> %s[%s/%s]\n", aID, tID, tool.Server, tool.Name)
+	for _, node := range g.Nodes {
+		label := fmt.Sprintf("%s\\n(%s)", node.Name, node.Kind)
+		switch node.Kind {
+		case KindMCPServer:
+			builder.WriteString(fmt.Sprintf("  %s[\"%s\"]:::%s\n", sanitizeID(node.ID), label, "server"))
+		case KindToolDef:
+			builder.WriteString(fmt.Sprintf("  %s(\"%s\"):::%s\n", sanitizeID(node.ID), label, "tool"))
+		case KindSecret:
+			builder.WriteString(fmt.Sprintf("  %s{{\"%s\"}}:::%s\n", sanitizeID(node.ID), label, "secret"))
+		default:
+			builder.WriteString(fmt.Sprintf("  %s[\"%s\"]\n", sanitizeID(node.ID), label))
 		}
 	}
-	fmt.Fprintln(w, "```")
+
+	for _, edge := range g.Edges {
+		builder.WriteString(fmt.Sprintf("  %s -->|%s| %s\n", sanitizeID(edge.FromID), edge.Relation, sanitizeID(edge.ToID)))
+	}
+
+	builder.WriteString("\nclassDef server fill:#f9f,stroke:#333,stroke-width:2px;\n")
+	builder.WriteString("classDef tool fill:#bbf,stroke:#333,stroke-width:1px;\n")
+	builder.WriteString("classDef secret fill:#f88,stroke:#333,stroke-width:2px;\n")
+
+	return builder.String()
+}
+
+func sanitizeID(id string) string {
+	r := strings.NewReplacer(":", "_", "/", "_", ".", "_", "-", "_")
+	return r.Replace(id)
 }
