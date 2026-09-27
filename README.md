@@ -1,477 +1,811 @@
-# Raaya Policy Engine
+# 🛡️ Raaya
 
-> **Local-first security & dependency graph analysis for AI agents, MCP configurations, and tool annotations.**
+**Static Security & Blast Radius Analysis for AI Agents and MCP Infrastructure**
 
-Raaya scans your repository's AI assets—**MCP servers, agent prompts, tool declarations, and runtime capabilities**—and builds an in-memory **Security Graph**.
+Raaya is a lightweight, single-binary security scanner built in Go for analyzing the security surface of AI agents and Model Context Protocol (MCP) infrastructure.
 
-It then evaluates security policies completely offline, helping developers detect dangerous agent capabilities, configuration mistakes, exposed credentials, and permission problems **before they reach production**.
+It discovers AI-agent configurations, MCP servers, tool definitions, prompts, local listeners, and credentials, then builds an in-memory **Security Graph** to identify security findings and calculate transitive capability exposure.
 
-No database. No cloud service. No external security backend.
+Raaya is designed to run **locally, quickly, and without external infrastructure**.
+
+> **Discover what your AI agent can access before it reaches production.**
+
+---
+
+## ✨ Features
+
+### 🔍 Multi-Source Discovery
+
+Raaya automatically discovers AI security assets from multiple sources:
+
+* `.cursor/mcp.json`
+* `mcp.json`
+* MCP server configurations
+* Python tool definitions
+* TypeScript tool definitions
+* Agent/prompt references
+* Environment and credential configuration
+* Local TCP/SSE listeners
+
+Supported Python patterns include:
+
+```python
+@mcp.tool
+def search(...):
+    ...
+```
+
+and:
+
+```python
+@tool
+def execute(...):
+    ...
+```
+
+---
+
+### 🌐 Active Listener Discovery
+
+Raaya can inspect locally running services:
+
+```bash
+raaya doctor --live
+```
+
+It probes supported local TCP/SSE endpoints and analyzes discovered MCP listeners for potentially unauthenticated exposure.
+
+This allows Raaya to detect security issues that may not be obvious from static configuration alone.
+
+---
+
+### 🕸️ Security Graph
+
+Raaya converts discovered AI infrastructure into an in-memory directed graph.
+
+Conceptually:
 
 ```text
-┌─────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│ Agent Prompts   │       │                  │       │                  │
-│ MCP Configs     │ ────> │  Security Graph  │ ────> │  Policy Engine   │
-│ Tool Definitions│       │  (In-Memory DAG) │       │                  │
-│ Code Decorators │       │                  │       │                  │
-└─────────────────┘       └──────────────────┘       └────────┬─────────┘
-                                                              │
-                                           ┌──────────────────┼─────────────────┐
-                                           ▼                  ▼                 ▼
-                                      Terminal             SARIF             CI/CD
+Agent
+  │
+  ▼
+MCP Server
+  │
+  ▼
+Tool
+  │
+  ├────────► Filesystem
+  ├────────► Network
+  ├────────► Database
+  └────────► Secrets
 ```
 
-## 🎯 Key Features
+The graph provides the foundation for security analysis and transitive capability analysis.
 
-* ⚡ **Zero-Config & Offline** — Run entirely locally in your terminal or CI runner with no database, server, or cloud dependency.
-* 🕸️ **In-Memory Security Graph** — Maps `AGENT → MODEL → SERVER → TOOL` relationships and capabilities.
-* 🛡️ **Built-in Security Policies** — Detect hardcoded secrets, unauthenticated endpoints, capability mismatches, excessive permissions, and unused capabilities.
-* 🛠️ **Automated Remediation** — Safely extract supported plaintext credentials into `.env` files with `raaya check --fix`.
-* 📊 **Developer & CI/CD Native** — Human-readable terminal diagnostics plus SARIF output for GitHub Code Scanning and other CI security systems.
-* 🔎 **Dependency Visualization** — Inspect agent, MCP server, and tool relationships directly from the terminal or export them as Mermaid diagrams.
-
----
-
-# 🚀 Quick Start
-
-## 1. Install Raaya
-One-command installation
-
-The fastest way to try Raaya:
-
-```bash
-npx raaya
-```
-
-Or install it with Homebrew:
-
-```bash
-brew install raaya
-```
-
-### Install with Go
-
-```bash
-go install github.com/raaya/raaya/cmd/raaya@latest
-```
-
-### Build locally
-
-```bash
-git clone https://github.com/raaya/raaya.git
-cd raaya
-go build -o raaya ./cmd/raaya
-```
-
-Verify the installation:
-
-```bash
-raaya --version
-```
-
----
-
-## 2. Run Workspace Diagnostics
-
-Start with `doctor` to verify your environment and discover supported AI assets.
-
-```bash
-raaya doctor
-```
-
-Raaya reports discovered:
-
-* MCP configuration files
-* Agent prompt definitions
-* Tool declarations
-* Supported source-code annotations
-* Runtime capability definitions
-
-Example:
-
-```text
-$ raaya doctor
-
-Raaya Workspace Diagnostics
-
-✓ Workspace detected
-✓ 3 MCP configurations found
-✓ 5 agent definitions found
-✓ 27 tool declarations found
-✓ 2 source decorators discovered
-
-Ready to run security checks.
-```
-
----
-
-## 3. Run Static Security Analysis
-
-Run the built-in policy engine:
-
-```bash
-raaya check
-```
-
-Raaya scans the workspace for security and configuration problems.
-
-Example:
-
-```text
-$ raaya check
-
-Raaya Security Scan
-
-✗ RAA001  ERROR
-  agents/researcher.prompt:18
-
-  Tool "github_search" is referenced by the agent
-  but is not declared by any MCP server or tool definition.
-
-  Fix:
-  Remove the reference or declare the tool.
-
-✗ RAA002  ERROR
-  mcp/github.json:12
-
-  Remote MCP endpoint does not define authentication.
-
-  Fix:
-  Configure authorization headers or access tokens.
-
-⚠ RAA003  WARNING
-  mcp/filesystem.json:24
-
-  Tool has unrestricted filesystem write access.
-
-  Fix:
-  Restrict the filesystem scope to required paths.
-
-──────────────────────────────────────────────
-
-2 errors · 1 warning
-
-Exit code: 1
-```
-
-### Automatically remediate supported findings
-
-For supported secret findings, Raaya can extract credentials into `.env`:
-
-```bash
-raaya check --fix
-```
-
-> **Note:** `--fix` should only modify findings for which Raaya can perform a deterministic and safe transformation. Destructive or ambiguous changes should remain suggestions rather than automatic fixes.
-
----
-
-## 4. Generate SARIF for CI/CD
-
-Export findings as standard SARIF:
-
-```bash
-raaya check --format sarif > results.sarif
-```
-
-SARIF can be consumed by security tooling such as GitHub Code Scanning and compatible CI/CD platforms.
-
-This allows Raaya to move from a local developer check to a **pre-merge security gate**.
-
----
-
-## 5. Visualize Agent & Tool Dependencies
-
-Inspect the discovered Security Graph:
+Graph output can be exported for visualization:
 
 ```bash
 raaya graph
 ```
 
-Example:
-
-```text
-Agent: researcher
-│
-├── Model: gpt-*
-│
-├── MCP: github
-│   ├── search
-│   └── issues
-│
-└── MCP: filesystem
-    ├── read
-    └── write
-```
-
-Export the graph as Mermaid:
+Mermaid:
 
 ```bash
 raaya graph --format mermaid
 ```
 
-This can be used in Markdown documentation, architecture reviews, and pull requests.
-
----
-
-## 6. Install the Git Pre-Commit Hook
-
-Prevent supported policy violations from being committed:
+DOT:
 
 ```bash
-raaya hook install
-```
-
-After installation, Raaya can run checks automatically before commits are created.
-
-```text
-git commit
-    │
-    ▼
-Raaya pre-commit check
-    │
-    ├── ✓ No policy violations
-    │       ↓
-    │     Commit
-    │
-    └── ✗ Policy violation
-            ↓
-          Commit blocked
+raaya graph --format dot
 ```
 
 ---
 
-# 🛡️ Built-in Security Checks
+### 💥 Transitive Blast Radius Analysis
 
-Raaya ships with native checks that work without requiring an OPA/Rego setup.
+Raaya analyzes graph reachability to answer questions such as:
 
-| Rule ID    | Rule Name                 | Severity    | Default Action     | Target Asset                   | Description                                                                                                                    |
-| ---------- | ------------------------- | ----------- | ------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| **RAA001** | `PromptToolMismatch`      | **Error**   | Block Commit       | `.prompt`, `system_prompt.txt` | Detects prompts that reference a tool or function that is not declared by an MCP configuration or supported source definition. |
-| **RAA002** | `UnauthenticatedEndpoint` | **Error**   | Block Commit       | `mcp_config.json`              | Detects remote MCP HTTP/SSE endpoints without configured authentication.                                                       |
-| **RAA003** | `OverPermissionedScope`   | **Warning** | Flag / Warn        | `mcp_config.json`              | Detects unrestricted filesystem access, root privileges, wildcard execution scopes, and other excessive capabilities.          |
-| **RAA004** | `PlaintextSecret`         | **Error**   | Auto-Fix (`--fix`) | MCP/config files               | Detects hardcoded API keys, bearer tokens, and database credentials in supported configuration files.                          |
-| **RAA005** | `OrphanedCapability`      | **Warning** | Flag / Warn        | Python/JS/TS decorators        | Detects tools or MCP capabilities that are declared but not referenced by any registered agent.                                |
+> **If an agent, prompt, or MCP server is compromised, what capabilities and resources can it reach?**
 
-### Example finding
+Example:
 
 ```text
-RAA003  WARNING
-
-agents/researcher.yaml:31
-
-Agent has unrestricted filesystem write access.
-
-Capability path:
-
-researcher
-  └── filesystem
-      └── write *
+research-agent
+      │
+      ▼
+github-mcp
+      │
+      ▼
+github_search
+      │
+      ▼
+network
 ```
 
-The graph context makes the finding more useful than a simple line-based configuration warning: developers can see **which agent can reach which capability and through which MCP server**.
+The blast-radius engine provides the foundation for identifying transitive relationships between agents, tools, capabilities, resources, and sensitive assets.
 
 ---
 
-# 🧠 How It Works
+### 🛡️ Dual Security Rule Engine
 
-Raaya follows a simple local analysis pipeline:
+Raaya combines two analysis mechanisms:
 
 ```text
-┌─────────────────────┐
-│ Repository          │
-│                     │
-│ Agent Prompts       │
-│ MCP Configs         │
-│ Tool Definitions    │
-│ Code Decorators     │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Security Graph      │
-│                     │
-│ AGENT               │
-│   ↓                 │
-│ MODEL               │
-│   ↓                 │
-│ SERVER              │
-│   ↓                 │
-│ TOOL / CAPABILITY   │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Policy Engine       │
-│                     │
-│ Native Rules        │
-│ OPA / Rego          │
-│                     │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Results             │
-│                     │
-│ Terminal            │
-│ SARIF               │
-│ Graph / Mermaid     │
-└─────────────────────┘
+                 Security Graph
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+        Native Go Rules      OPA / Rego
+              │                 │
+              └────────┬────────┘
+                       ▼
+                   Findings
 ```
 
-Everything required for the static analysis runs locally.
+#### Native Go Rules
+
+High-confidence built-in security checks are implemented under:
+
+```text
+pkg/analysis/rules/
+```
+
+These rules provide fast, deterministic checks for common AI-agent and MCP security issues.
+
+#### OPA / Rego Policies
+
+Raaya also supports graph-based policy evaluation through embedded OPA/Rego policies.
+
+Policies are stored under:
+
+```text
+pkg/analysis/policies/
+```
+
+This allows more complex relationships and organization-specific security requirements to be evaluated against the Security Graph.
 
 ---
 
-# 🔐 Why Raaya?
+# 🔐 Detection Rules
 
-AI applications increasingly combine agents, models, MCP servers, tools, credentials, and runtime capabilities.
+The current Phase 1 implementation includes native security checks and Rego-based policy enforcement.
 
-A traditional source-code scanner may identify a hardcoded credential.
+| **Rule ID**                 | **Name**               |       **Severity** | **Description**                                                                                                 |
+| --------------------------- | ---------------------- | -----------------: | --------------------------------------------------------------------------------------------------------------- |
+| `RAAYA-001-SECRETS`         | Hardcoded Credentials  |       **CRITICAL** | Flags plaintext API keys, tokens, passwords, and other credential-like values in supported configuration files. |
+| `RAAYA-002-UNAUTH-ENDPOINT` | Unauthenticated Server |           **HIGH** | Detects HTTP/SSE MCP servers running without identifiable authentication headers, credentials, or secrets.      |
+| `RAAYA-REGO-001`            | Rego Policy Violation  | **Policy-defined** | Reports violations produced by the embedded OPA/Rego security policies evaluated against the Security Graph.    |
 
-A configuration scanner may identify an open endpoint.
+### `RAAYA-001-SECRETS`
 
-But the security question is often **relational**:
+Detects credential-like values embedded directly in supported AI/MCP configuration files.
 
-> Which agent can reach which tool, through which server, with which permissions?
+Example:
 
-Raaya models those relationships as a Security Graph and evaluates policies against the resulting capability graph.
+```json
+{
+  "apiKey": "sk-live-xxxxxxxx"
+}
+```
+
+Raaya reports the location and provides a remediation path where supported.
+
+Run automatic remediation with:
+
+```bash
+raaya check --fix
+```
+
+For supported findings, Raaya can extract credentials into an environment file and verify that the file is protected by `.gitignore`.
+
+---
+
+### `RAAYA-002-UNAUTH-ENDPOINT`
+
+Detects potentially unauthenticated MCP HTTP/SSE endpoints.
+
+For example:
+
+```text
+MCP Server
+    │
+    ├── Transport: SSE
+    ├── Address: 0.0.0.0:3000
+    └── Authentication: None
+```
+
+Raaya reports the endpoint as a high-severity security finding.
+
+Live listener discovery can be enabled with:
+
+```bash
+raaya doctor --live
+```
+
+---
+
+### `RAAYA-REGO-001`
+
+Rego policy violations are evaluated against the Security Graph.
+
+This enables policies to reason about relationships rather than isolated files.
+
+Conceptually:
 
 ```text
 Agent
   │
-  ├── Model
+  ▼
+MCP Server
   │
-  ├── MCP Server
-  │      │
-  │      ├── Tool A
-  │      ├── Tool B
-  │      └── Tool C
+  ▼
+Tool
   │
-  └── Runtime Capabilities
+  ▼
+Capability
 ```
 
-This allows Raaya to detect risks that depend on the **relationship between multiple AI assets**, rather than examining each file in isolation.
+A policy can evaluate properties and relationships across those graph nodes.
 
----
-
-# 🤖 Policy Engine
-
-Raaya's built-in checks require no policy configuration.
-
-For teams that need custom security requirements, Raaya can additionally evaluate policies using OPA/Rego.
-
-This gives developers a simple progression:
+The Rego engine is implemented in:
 
 ```text
-Zero Configuration
-       │
-       ▼
-Built-in Rules
-       │
-       ▼
-Custom Policies
-       │
-       ▼
-CI/CD Enforcement
+pkg/analysis/rego_engine.go
 ```
 
-Developers can start with:
+Embedded policies are located in:
 
-```bash
-raaya check
+```text
+pkg/analysis/policies/
 ```
-
-and introduce custom policy enforcement later as their AI infrastructure grows.
 
 ---
 
-# 📦 CI/CD Usage
+# 📈 Differential Analysis
 
-A typical CI pipeline can run:
+Raaya includes a differential baseline comparator:
+
+```text
+pkg/analysis/delta.go
+```
+
+This allows CI workflows to distinguish existing findings from newly introduced findings.
+
+Conceptually:
+
+```text
+Baseline
+   │
+   ├── Existing findings ──────► Existing
+   │
+   └── New findings ───────────► New
+                                      │
+                                      ▼
+                                 CI decision
+```
+
+This makes it possible to introduce Raaya into an existing repository without requiring every historical finding to be fixed immediately.
+
+---
+
+# 🛠️ Automated Remediation
+
+Raaya includes a remediation engine:
+
+```text
+pkg/fixer/
+```
+
+For supported credential findings, Raaya can:
+
+1. Detect hardcoded credentials
+2. Extract the value into an environment file
+3. Replace the original configuration value
+4. Verify `.gitignore` protection
+5. Report the resulting changes
+
+Run:
+
+```bash
+raaya check --fix
+```
+
+Raaya only applies deterministic remediation where it can do so safely.
+
+---
+
+# 📊 CI/CD & SARIF
+
+Raaya is designed to integrate into existing security pipelines.
+
+Generate JSON:
+
+```bash
+raaya check --format json
+```
+
+Generate SARIF:
 
 ```bash
 raaya check --format sarif > results.sarif
 ```
 
-and fail the pipeline when configured severity thresholds are exceeded.
+Raaya also supports differential analysis for CI/CD workflows.
 
-Recommended workflow:
+This allows teams to focus on newly introduced security findings rather than being blocked immediately by historical findings.
+
+---
+
+# 🪝 Git Pre-Commit Hooks
+
+Raaya can install a Git pre-commit hook:
+
+```bash
+raaya hook install
+```
+
+This allows security checks to run before changes are committed.
+
+The objective is to catch AI-agent security issues as early as possible in the development lifecycle.
+
+---
+
+# 🚀 Quick Start
+
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/your-org/raaya.git
+cd raaya
+```
+
+Build the binary:
+
+```bash
+go build -o raaya ./cmd/raaya
+```
+
+Run discovery:
+
+```bash
+./raaya doctor
+```
+
+Run the security scan:
+
+```bash
+./raaya check
+```
+
+---
+
+# ⚡ 30-Second Workflow
 
 ```text
-Developer
-    │
-    ▼
+        ┌─────────────┐
+        │  Repository │
+        └──────┬──────┘
+               │
+               ▼
+       ┌───────────────┐
+       │ raaya doctor  │
+       │   Discovery   │
+       └───────┬───────┘
+               │
+               ▼
+       ┌───────────────┐
+       │  raaya check  │
+       │ Security Scan │
+       └───────┬───────┘
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+     Findings       Graph
+        │             │
+        ▼             ▼
+       Fix       Blast Radius
+        │
+        ▼
+       CI/CD
+```
+
+---
+
+# 🩺 `raaya doctor`
+
+Use `doctor` to inspect what Raaya discovers in the current workspace.
+
+```bash
+raaya doctor
+```
+
+For live listener discovery:
+
+```bash
+raaya doctor --live
+```
+
+Example:
+
+```text
+Raaya Doctor
+
+Workspace: ./my-agent
+
+Discovery
+────────────────────────────────────
+
+✓ MCP configuration
+  .cursor/mcp.json
+
+✓ MCP configuration
+  mcp.json
+
+✓ Python tools
+  src/tools/search.py
+
+✓ TypeScript tools
+  src/tools/files.ts
+
+✓ Environment configuration
+  .env
+
+Discovery complete.
+```
+
+---
+
+# 🔎 `raaya check`
+
+Run the security analysis:
+
+```bash
 raaya check
+```
+
+Example:
+
+```text
+Raaya Security Scan
+
+✗ RAAYA-001-SECRETS CRITICAL
+  .cursor/mcp.json:14
+
+  Hardcoded credential detected.
+
+  Fix:
+  Move the credential to an environment variable.
+
+────────────────────────────────────────────
+
+✗ RAAYA-002-UNAUTH-ENDPOINT HIGH
+  mcp.json:12
+
+  MCP server is running without
+  identifiable authentication.
+
+  Fix:
+  Configure authentication or restrict
+  the endpoint exposure.
+
+────────────────────────────────────────────
+
+✗ RAAYA-REGO-001
+  Security Graph
+
+  Policy violation detected by
+  embedded Rego policy.
+
+Scan complete.
+
+3 findings
+```
+
+The intended diagnostic structure is:
+
+```text
+Rule
+  ↓
+Location
+  ↓
+Problem
+  ↓
+Security context
+  ↓
+Suggested remediation
+```
+
+---
+
+# 🏗️ Architecture
+
+Raaya is organized into focused analysis components:
+
+```text
+raaya/
+├── cmd/raaya/
+│   └── CLI entry point & subcommands
+│
+├── pkg/
+│   │
+│   ├── analysis/
+│   │   ├── engine.go
+│   │   ├── rego_engine.go
+│   │   ├── delta.go
+│   │   │
+│   │   ├── policies/
+│   │   │   ├── default.rego
+│   │   │   └── embed.go
+│   │   │
+│   │   └── rules/
+│   │       ├── secrets.go
+│   │       ├── unauth.go
+│   │       └── rules.go
+│   │
+│   ├── blastradius/
+│   │   └── Transitive graph reachability
+│   │
+│   ├── discovery/
+│   │   └── AST, configuration,
+│   │       prompt & port discovery
+│   │
+│   ├── fixer/
+│   │   └── Credential remediation
+│   │
+│   ├── graph/
+│   │   └── Security Graph & exporters
+│   │
+│   └── reporter/
+│       └── SARIF reporting
+```
+
+### Analysis Flow
+
+```text
+Repository
     │
     ▼
-Fix findings
-    │
-    ▼
-Git commit
-    │
-    ▼
-Pre-commit hook
-    │
-    ▼
-Pull Request
-    │
-    ▼
-CI / SARIF
-    │
-    ▼
-Production
+┌──────────────────┐
+│    Discovery     │
+│                  │
+│ AST              │
+│ JSON Config      │
+│ Prompts          │
+│ Ports            │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Security Graph  │
+│                  │
+│ Agent            │
+│ MCP Server       │
+│ Tool             │
+│ Capability       │
+│ Resource         │
+└────────┬─────────┘
+         │
+    ┌────┴─────┐
+    ▼          ▼
+Native Go    OPA/Rego
+Rules        Policies
+    │          │
+    └────┬─────┘
+         ▼
+   Security Findings
+         │
+    ┌────┼────────┐
+    ▼    ▼        ▼
+   CLI  SARIF    JSON
+         │
+         ▼
+      CI / Git
+```
+
+---
+
+# 📦 Package Responsibilities
+
+| Package                 | Responsibility                                                          |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `cmd/raaya`             | CLI commands and user interaction                                       |
+| `pkg/discovery`         | Discover AI assets, configurations, AST definitions, prompts, and ports |
+| `pkg/graph`             | Build and export the in-memory Security Graph                           |
+| `pkg/blastradius`       | Calculate transitive graph reachability                                 |
+| `pkg/analysis`          | Orchestrate security analysis                                           |
+| `pkg/analysis/rules`    | Native Go security rules                                                |
+| `pkg/analysis/policies` | Embedded Rego policies                                                  |
+| `pkg/fixer`             | Safe automated remediation                                              |
+| `pkg/reporter`          | SARIF report generation                                                 |
+
+---
+
+# 🎯 Design Principles
+
+### Local First
+
+Raaya's core analysis runs locally.
+
+There is no requirement for a hosted database or external security service.
+
+### Zero Configuration
+
+The first scan should work without requiring developers to write a policy file.
+
+```bash
+raaya check
+```
+
+### Fast Feedback
+
+Security analysis should fit naturally into local development and CI workflows.
+
+### Deterministic Analysis
+
+Phase 1 focuses on observable configuration, code, graph relationships, and local runtime exposure rather than attempting to predict arbitrary LLM behavior.
+
+### Actionable Findings
+
+A security finding should answer:
+
+```text
+What was found?
+Where was it found?
+Why does it matter?
+How can I fix it?
 ```
 
 ---
 
 # 🗺️ Roadmap
 
-### Phase 1 — Developer Experience
+Raaya is being developed around three progressively deeper capabilities:
 
-* [ ] Zero-config native security checks
-* [ ] Human-friendly terminal diagnostics
-* [ ] Stable rule IDs
-* [ ] Line-level findings
-* [ ] Actionable remediation
-* [ ] SARIF output
-* [ ] Git pre-commit integration
+```text
+DISCOVER
+   ↓
+UNDERSTAND
+   ↓
+CONTROL
+```
 
-### Phase 2 — Security Graph
+## Phase 1 — Instant Asset & Security-Surface Discovery
 
-* [ ] Expanded MCP capability discovery
-* [ ] Agent → model → server → tool relationship analysis
-* [ ] Transitive capability analysis
-* [ ] Risk propagation across dependency paths
-* [ ] Improved graph visualization
+**Current implementation**
 
-### Phase 3 — Policy-as-Code
+* Zero-config discovery
+* MCP configuration discovery
+* Python/TypeScript tool discovery
+* Prompt/tool discovery
+* Local listener discovery
+* Credential detection
+* Native security rules
+* OPA/Rego policy evaluation
+* Terminal diagnostics
+* JSON output
+* SARIF output
+* Differential analysis
+* Safe remediation
+* Git hooks
 
-* [ ] OPA/Rego integration
-* [ ] Custom organization policies
-* [ ] Policy bundles
-* [ ] CI policy enforcement
-* [ ] Security policy testing
+**Goal:**
+
+> Understand the AI application's security surface within seconds.
 
 ---
 
-# ⚡ The 30-Second Workflow
+## Phase 2 — Security Graph & Capability Diff
+
+Planned expansion of the existing graph and blast-radius foundations:
+
+* MCP schema + configuration + AST hybrid analysis
+* Agent → MCP Server → Tool → Resource reachability
+* Transitive capability propagation
+* Expanded blast-radius analysis
+* Graph visualization
+* PR capability diff
+* GitHub PR comments
+* Security-surface change detection
+
+**Goal:**
+
+> Understand how a code or configuration change changes the capabilities reachable by an AI agent.
+
+---
+
+## Phase 3 — Developer-First Policy
+
+Planned policy experience:
+
+* Declarative YAML rules
+* Semgrep-style policy authoring
+* Pre-built security policy bundles
+* Organization-specific policies
+* CI/CD enforcement
+* Compliance reporting
+* Optional OPA/Rego integration
+
+The objective is to allow developers and security engineers to express policies in terms of **agents, tools, capabilities, resources, and reachability** without requiring deep knowledge of Rego.
+
+OPA/Rego remains available as an integration path for organizations that already use OPA-based policy infrastructure.
+
+**Goal:**
+
+> Define what AI agents are allowed to reach — and enforce it automatically.
+
+---
+
+# 🧪 Development
+
+Run tests:
 
 ```bash
-# Install
-go install github.com/raaya/raaya/cmd/raaya@latest
-
-# Discover your AI assets
-raaya doctor
-
-# Find security and configuration issues
-raaya check
-
-# Inspect the capability graph
-raaya graph
-
-# Export findings for CI
-raaya check --format sarif > results.sarif
+go test ./...
 ```
 
-**Raaya turns AI-agent configuration into a security graph you can inspect, analyze, and enforce—without sending your repository to a cloud service.**
+Run static analysis:
+
+```bash
+go vet ./...
+```
+
+Build:
+
+```bash
+go build ./...
+```
+
+Run locally:
+
+```bash
+go run ./cmd/raaya doctor
+go run ./cmd/raaya check
+```
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome.
+
+Useful areas include:
+
+* MCP discovery
+* Agent/tool parsers
+* Security rules
+* Graph analysis
+* Blast-radius analysis
+* Rego policies
+* SARIF integration
+* Remediation
+* CI integrations
+* Test fixtures
+* Documentation
+
+Before opening a pull request:
+
+```bash
+go test ./...
+go vet ./...
+go build ./...
+```
+
+---
+
+# 📄 License
+
+License information will be added here.
+
+---
+
+# 🛡️ Raaya
+
+**Discover the AI security surface. Understand the blast radius. Control what your agents can reach.**
+
+```bash
+raaya doctor
+raaya check
+```
