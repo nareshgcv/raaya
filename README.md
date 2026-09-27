@@ -39,10 +39,12 @@ One-command installation
 
 The fastest way to try Raaya:
 
+```bash
 npx raaya
 
 Or install it with Homebrew:
 
+```bash
 brew install raaya
 
 ### Install with Go
