@@ -1,41 +1,40 @@
 package config
 
 import (
+	"bufio"
 	"os"
-
-	"gopkg.in/yaml.v3"
+	"path/filepath"
+	"strings"
 )
 
 type Config struct {
-	IgnorePaths []string          `yaml:"ignore_paths"`
-	Thresholds  ThresholdSettings `yaml:"thresholds"`
-	Rules       RuleSettings     `yaml:"rules"`
+	IgnoredRules map[string]bool
+	IgnoredPaths []string
 }
 
-type ThresholdSettings struct {
-	MaxBlastRadius int `yaml:"max_blast_radius"`
-}
-
-type RuleSettings struct {
-	Disabled []string `yaml:"disabled"`
-}
-
-func LoadConfig(path string) (*Config, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return &Config{
-			Thresholds: ThresholdSettings{MaxBlastRadius: 5},
-		}, nil
+func LoadConfig(workspace string) (*Config, error) {
+	cfg := &Config{
+		IgnoredRules: make(map[string]bool),
+		IgnoredPaths: []string{},
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	// Parse .raayaignore if present
+	ignorePath := filepath.Join(workspace, ".raayaignore")
+	if file, err := os.Open(ignorePath); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if strings.HasPrefix(line, "RAA") {
+				cfg.IgnoredRules[line] = true
+			} else {
+				cfg.IgnoredPaths = append(cfg.IgnoredPaths, line)
+			}
+		}
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return cfg, nil
 }
