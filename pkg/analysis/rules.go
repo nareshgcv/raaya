@@ -1,103 +1,189 @@
-package analysis
+package static
 
 import (
-	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
-	"github.com/raaya/pkg/graph"
+	"raaya/pkg/discovery"
 )
 
-// Severity indicates the risk level of a rule violation.
 type Severity string
 
 const (
-	SeverityCritical Severity = "CRITICAL"
-	SeverityHigh     Severity = "HIGH"
-	SeverityMedium   Severity = "MEDIUM"
-	SeverityLow      Severity = "LOW"
-	SeverityInfo     Severity = "INFO"
+	SeverityError   Severity = "ERROR"
+	SeverityWarning Severity = "WARN"
 )
 
-// Rule defines the interface that all security analysis rules must satisfy.
-type Rule interface {
-	// ID returns a unique identifier for the rule (e.g., "SEC-001").
-	ID() string
-	// Name returns a human-readable title for the rule.
-	Name() string
-	// Description details what security risk or misconfiguration this rule checks for.
-	Description() string
-	// Severity returns the risk level if this rule is violated.
-	Severity() Severity
-	// Evaluate runs the rule against the provided SecurityGraph and returns violations found.
-	Evaluate(ctx context.Context, sg *graph.SecurityGraph) ([]RuleViolation, error)
+type Finding struct {
+	RuleID      string
+	RuleName    string
+	Severity    Severity
+	FilePath    string
+	Line        int
+	Col         int
+	Message     string
+	Snippet     string
+	FixHint     string
+	IsFixable   bool
 }
 
-// RuleViolation represents an instance where a security rule was breached.
-type RuleViolation struct {
-	RuleID      string                 `json:"rule_id"`
-	RuleName    string                 `json:"rule_name"`
-	Severity    Severity               `json:"severity"`
-	ResourceID  string                 `json:"resource_id,omitempty"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+type Engine struct{}
+
+func NewEngine() *Engine {
+	return &Engine{}
 }
 
-// RuleRegistry manages and executes the collection of active security rules.
-type RuleRegistry struct {
-	rules map[string]Rule
+func (e *Engine) Evaluate(configs []discovery.MCPConfig, prompts []discovery.PromptAsset) []Finding {
+	var findings []Finding
+
+	findings = append(findings, checkPlaintextSecrets(configs)...)
+	findings = append(findings, checkUnauthenticatedEndpoints(configs)...)
+	findings = append(findings, checkOverpermissionedScopes(configs)...)
+	findings = append(findings, checkPromptToolMismatch(configs, prompts)...)
+	findings = append(findings, checkOrphanedCapabilities(configs, prompts)...)
+
+	return findings
 }
 
-// NewRuleRegistry initializes a new RuleRegistry instance.
-func NewRuleRegistry() *RuleRegistry {
-	return &RuleRegistry{
-		rules: make(map[string]Rule),
-	}
-}
+// RAA004: Plaintext Secrets
+func checkPlaintextSecrets(configs []discovery.MCPConfig) []Finding {
+	var findings []Finding
+	secretPattern := regexp.MustCompile(`(?i)(api[_-]?key|secret|token|password)\s*:\s*["'](sk-[a-zA-Z0-9]{20,}|[a-zA-Z0-9_-]{32,})["']`)
 
-// Register adds a new rule to the registry.
-func (r *RuleRegistry) Register(rule Rule) error {
-	if rule == nil {
-		return fmt.Errorf("cannot register nil rule")
-	}
-	if _, exists := r.rules[rule.ID()]; exists {
-		return fmt.Errorf("rule with ID %q already registered", rule.ID())
-	}
-	r.rules[rule.ID()] = rule
-	return nil
-}
-
-// Get retrieves a registered rule by its ID.
-func (r *RuleRegistry) Get(id string) (Rule, bool) {
-	rule, ok := r.rules[id]
-	return rule, ok
-}
-
-// List returns all currently registered rules.
-func (r *RuleRegistry) List() []Rule {
-	list := make([]Rule, 0, len(r.rules))
-	for _, rule := range r.rules {
-		list = append(list, rule)
-	}
-	return list
-}
-
-// EvaluateAll executes all registered rules against the SecurityGraph and collects violations.
-func (r *RuleRegistry) EvaluateAll(ctx context.Context, sg *graph.SecurityGraph) ([]RuleViolation, error) {
-	var allViolations []RuleViolation
-
-	for _, rule := range r.rules {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+	for _, cfg := range configs {
+		for lineNum, line := range cfg.Lines {
+			if matches := secretPattern.FindStringSubmatch(line); len(matches) > 0 {
+				findings = append(findings, Finding{
+					RuleID:    "RAA004",
+					RuleName:  "plaintext-secret",
+					Severity:  SeverityError,
+					FilePath:  cfg.Path,
+					Line:      lineNum + 1,
+					Col:       strings.Index(line, matches[0]) + 1,
+					Message:   fmt.Sprintf("Hardcoded secret detected in server configuration"),
+					Snippet:   strings.TrimSpace(line),
+					FixHint:   "Move secret to .env and reference via ${ENV_VAR}",
+					IsFixable: true,
+				})
+			}
 		}
+	}
+	return findings
+}
 
-		violations, err := rule.Evaluate(ctx, sg)
-		if err != nil {
-			return nil, fmt.Errorf("failed evaluating rule %s: %w", rule.ID(), err)
+// RAA002: Unauthenticated Endpoints
+func checkUnauthenticatedEndpoints(configs []discovery.MCPConfig) []Finding {
+	var findings []Finding
+	for _, cfg := range configs {
+		for sName, server := range cfg.MCPServers {
+			if strings.Contains(server.URL, "0.0.0.0") || (strings.HasPrefix(server.URL, "http://") && len(server.Headers) == 0) {
+				findings = append(findings, Finding{
+					RuleID:    "RAA002",
+					RuleName:  "unauthenticated-endpoint",
+					Severity:  SeverityError,
+					FilePath:  cfg.Path,
+					Line:      server.LineNumber,
+					Col:       1,
+					Message:   fmt.Sprintf("MCP Server '%s' exposes an HTTP endpoint without auth headers or binds to 0.0.0.0", sName),
+					Snippet:   server.URL,
+					FixHint:   "Bind endpoint to 127.0.0.1 or provide authorization headers",
+					IsFixable: false,
+				})
+			}
 		}
-		allViolations = append(allViolations, violations...)
+	}
+	return findings
+}
+
+// RAA003: Over-Permissioned Scopes
+func checkOverpermissionedScopes(configs []discovery.MCPConfig) []Finding {
+	var findings []Finding
+	for _, cfg := range configs {
+		for sName, server := range cfg.MCPServers {
+			for _, arg := range server.Args {
+				if arg == "*" || arg == "/" || arg == "root" {
+					findings = append(findings, Finding{
+						RuleID:    "RAA003",
+						RuleName:  "overpermissioned-scope",
+						Severity:  SeverityWarning,
+						FilePath:  cfg.Path,
+						Line:      server.LineNumber,
+						Col:       1,
+						Message:   fmt.Sprintf("Server '%s' requests unrestricted root or wildcard file scope ('%s')", sName, arg),
+						Snippet:   arg,
+						FixHint:   "Restrict execution path to specific subdirectories (e.g., ./workspace)",
+						IsFixable: false,
+					})
+				}
+			}
+		}
+	}
+	return findings
+}
+
+// RAA001: Prompt/Tool Mismatch
+func checkPromptToolMismatch(configs []discovery.MCPConfig, prompts []discovery.PromptAsset) []Finding {
+	var findings []Finding
+	declaredTools := make(map[string]bool)
+	for _, cfg := range configs {
+		for _, server := range cfg.MCPServers {
+			for _, tool := range server.DeclaredTools {
+				declaredTools[tool] = true
+			}
+		}
 	}
 
-	return allViolations, nil
+	for _, prompt := range prompts {
+		for _, ref := range prompt.ToolReferences {
+			if !declaredTools[ref.Name] {
+				findings = append(findings, Finding{
+					RuleID:    "RAA001",
+					RuleName:  "prompt-tool-mismatch",
+					Severity:  SeverityError,
+					FilePath:  prompt.Path,
+					Line:      ref.Line,
+					Col:       ref.Col,
+					Message:   fmt.Sprintf("Prompt references tool '%s' which is not defined in any MCP server config", ref.Name),
+					Snippet:   ref.ContextSnippet,
+					FixHint:   fmt.Sprintf("Add tool '%s' to mcp_config.json or update system prompt", ref.Name),
+					IsFixable: false,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+// RAA005: Orphaned Capabilities
+func checkOrphanedCapabilities(configs []discovery.MCPConfig, prompts []discovery.PromptAsset) []Finding {
+	var findings []Finding
+	usedTools := make(map[string]bool)
+	for _, p := range prompts {
+		for _, ref := range p.ToolReferences {
+			usedTools[ref.Name] = true
+		}
+	}
+
+	for _, cfg := range configs {
+		for _, server := range cfg.MCPServers {
+			for _, tool := range server.DeclaredTools {
+				if !usedTools[tool] {
+					findings = append(findings, Finding{
+						RuleID:    "RAA005",
+						RuleName:  "orphaned-capability",
+						Severity:  SeverityWarning,
+						FilePath:  cfg.Path,
+						Line:      server.LineNumber,
+						Col:       1,
+						Message:   fmt.Sprintf("Tool capability '%s' is declared but never referenced in any prompt", tool),
+						Snippet:   tool,
+						FixHint:   "Remove unreferenced tool definition to reduce attack surface",
+						IsFixable: true,
+					})
+				}
+			}
+		}
+	}
+	return findings
 }
