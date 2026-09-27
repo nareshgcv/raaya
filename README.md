@@ -1,17 +1,27 @@
-# 🦍 raaya
 
->**Raaya Policy Engine** — Local-first security & dependency graph analysis for AI agents, MCP configurations, and tool annotations.
 
-`raaya` parses your repository’s AI assets—Model Context Protocol (MCP) servers, agent prompt definitions, tool declarations, and runtime capabilities—and builds a light-in-memory **Security Graph**. It evaluates policy checks (via OPA/Rego and native static rules) completely offline with zero database dependencies.
+# Raaya Policy Engine
 
----
+> **Local-first security & dependency graph analysis for AI agents, MCP configurations, and tool annotations.**
 
-## 🎯 Key Features
+Raaya parses your repository’s AI assets—Model Context Protocol (MCP) servers, agent prompt definitions, tool declarations, and runtime capabilities—and builds an in-memory **Security Graph**. It evaluates policy checks completely offline with zero database or external cloud dependencies.
 
-- ⚡ **Zero Infrastructure Required**: Runs 100% locally in CLI without external backends or databases.
-- 🕸️ **In-Memory Graph Representation**: Builds a DAG (Directed Acyclic Graph) of agent capabilities, MCP servers, and tool permissions.
-- 🛡️ **Embedded Policy Enforcement**: Runs local Rego policies against the computed security graph.
-- 📊 **SARIF & CI/CD Native**: Emits standard SARIF reports for GitHub Code Scanning/GitLab Security Dashboard, or formatted CLI visualizations.
+```text
+ ┌─────────────────┐       ┌──────────────────┐       ┌─────────────────┐
+ │ Agent Prompts   │ ────> │  Security Graph  │ ────> │ Policy Engine   │
+ │ MCP Configs     │       │  (In-Memory DAG) │       │ (SARIF/Terminal)│
+ │ Code Decorators │ ────> └──────────────────┘ ────> └─────────────────┘
+ └─────────────────┘
+🎯 Key Features
+- ⚡ Zero-Config & Offline: Runs 100% locally in your terminal or CI runner with zero database or server dependencies.
+
+- 🕸️ In-Memory Security Graph: Constructs a Directed Acyclic Graph (DAG) mapping AGENT → MODEL → SERVER → TOOL relationships and capabilities.
+
+- 🛡️ Static Policy Enforcement: Built-in checks for hardcoded secrets, unauthenticated HTTP/SSE endpoints, prompt/tool capability mismatches, over-permissioned scopes, and orphaned tools.
+
+- 🛠️ Automated Remediation: Auto-extract plaintext credentials directly into .env files via raaya check --fix.
+
+- 📊 Terminal & CI/CD Native: Renders formatted terminal output with code snippets, ASCII/Mermaid dependency graphs, or standard SARIF output for GitHub Code Scanning.
 
 ---
 
@@ -21,41 +31,76 @@
 
 ```bash
 # Install via Go
-go install [github.com/raaya/ape@latest](https://github.com/raaya/ape@latest)
+go install [github.com/raaya/cmd/raaya@latest](https://github.com/raaya/cmd/raaya@latest)
 
 # Or build locally
-git clone [https://github.com/raaya/ape.git](https://github.com/raaya/ape.git)
-cd ape
-go build -o raaya ./cmd/raaya # raaya
+git clone [https://github.com/raaya/raaya.git](https://github.com/raaya/raaya.git)
+cd raaya
+go build -o raaya ./cmd/raaya
+
+🚀 Quick Start
+1. Run Workspace Diagnostics
+Verify your local environment, discovered MCP configuration files, and prompt assets in under 5 seconds:
+
+```bash
+raaya doctor
 
 
+2. Perform Static Policy Analysis
+Scan the workspace for credential exposure, misconfigured MCP endpoints, and orphaned capability declarations:
 
-Basic Usage
-1. Scan a Repository
-Scan your local project directory for agent tools, MCP server setups, and prompt dependencies:
+```bash
+raaya check
 
-raaya scan .
+Automatically extract hardcoded API secrets into .env files:
+```bash
+raaya check --fix
 
-2. Visualise the Dependency Graph
-Render an ASCII summary or graph representation of how tools and agents interact in terminal:
-raaya graph .
+Output standard SARIF for GitHub Actions or GitLab CI integration:
 
-3. Export SARIF for GitHub / GitLab CI
-Generate standard SARIF outputs for automated security scanning:
+```bash
+raaya check --format sarif > results.sarif
 
-raaya scan . --format=sarif --output=results.sarif
+3. Visualize Agent & Tool Dependency Graphs
+Render an ASCII visual tree of all agents, MCP servers, and referenced tools directly in your terminal:
+
+```bash
+raaya graph
+
+Export a Mermaid.js diagram for markdown documentation or GitHub PR comments:
+
+```bash
+raaya graph --format mermaid
+
+4. Install Git Pre-Commit Hook
+Prevent unencrypted credentials or policy violations from reaching source control:
+
+```bash
+raaya hook install
 
 🧠 How It Works
 
-📁 Repo Files         🔍 In-Memory Engine            🛡️ Policy Rule Engine            📊 Output
-+------------------+   +------------------------+    +--------------------------+    +------------------+
-| mcp.json         |   |                        |    |                          |    | Terminal Summary |
-| tool_defs.py     |-->| SecurityGraph Builder  |--->| OPA / Rego Evaluator     |--->| SARIF Report     |
-| agent_prompts.md |   | (Nodes & Capabilities) |    | Native Rule Checking     |    | Terminal Graph   |
-+------------------+   +--------------------- +  +--------------------------+    +------------------+ 
+📁 # Raaya Policy Engine
 
-1.Graph Construction: ape parses configurations (mcp.json, agent descriptors, tool code annotations) into an internal SecurityGraph.
+> **Local-first security & dependency graph analysis for AI agents, MCP configurations, and tool annotations.**
 
-2.Local Evaluation: Evaluates embedded Rego policies (or custom .rego files provided locally) directly against the graph using an embedded Open Policy Agent runtime.
+Raaya parses your repository’s AI assets—Model Context Protocol (MCP) servers, agent prompt definitions, tool declarations, and runtime capabilities—and builds an in-memory **Security Graph**. It evaluates policy checks completely offline with zero database or external cloud dependencies.
 
-3.Structured Reporting: Outputs actionable violations with context and risk metrics.
+```text
+ ┌─────────────────┐       ┌──────────────────┐       ┌─────────────────┐
+ │ Agent Prompts   │ ────> │  Security Graph  │ ────> │ Policy Engine   │
+ │ MCP Configs     │       │  (In-Memory DAG) │       │ (SARIF/Terminal)│
+ │ Code Decorators │ ────> └──────────────────┘ ────> └─────────────────┘
+ └─────────────────┘
+
+
+**Built-in Security checks**
+
+| Rule ID | Rule Name | Severity | Default Action | Target Asset | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **RAA001** | `PromptToolMismatch` | **Error** | Block Commit | `.prompt`, `system_prompt.txt` | Prompt references a tool name or function call that is not declared in any MCP config or source decorator. |
+| **RAA002** | `UnauthenticatedEndpoint` | **Error** | Block Commit | `mcp_config.json` | Remote MCP HTTP or SSE transport server defined without authorization headers or access tokens. |
+| **RAA003** | `OverPermissionedScope` | **Warning** | Flag / Warn | `mcp_config.json` | MCP server granted unrestricted filesystem write access, root privileges, or wildcard execution scopes. |
+| **RAA004** | `PlaintextSecret` | **Error** | Auto-Fix (`--fix`) | `mcp_config.json`, `.env` | Hardcoded API keys, bearer tokens, or database credentials detected in environment variable declarations. |
+| **RAA005** | `OrphanedCapability` | **Warning** | Flag / Warn | Python/JS/TS Decorators | Tool or MCP server declared in source code or config but never invoked or referenced by any registered agent. |
+
