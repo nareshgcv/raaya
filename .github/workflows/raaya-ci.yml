@@ -1,0 +1,33 @@
+name: Raaya Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  scan:
+    name: Run Raaya Policy Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Raaya Binary
+        run: go build -o raaya ./cmd/raaya
+
+      - name: Execute Raaya Check (SARIF Export)
+        run: ./raaya check --format sarif > raaya-results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF report to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: raaya-results.sarif
