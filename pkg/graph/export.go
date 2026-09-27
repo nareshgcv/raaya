@@ -1,25 +1,54 @@
+// pkg/graph/export.go
 package graph
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
-func ExportToDOT(sg *SecurityGraph) string {
-	var sb strings.Builder
-	sb.WriteString("digraph SecurityGraph {\n")
-	sb.WriteString("  rankdir=LR;\n")
-	sb.WriteString("  node [shape=box, style=filled, color=lightgrey];\n\n")
+type Graph struct {
+	Agents []AgentNode
+}
 
-	for _, node := range sg.Nodes {
-		sb.WriteString(fmt.Sprintf("  \"%s\" [label=\"%s\\n(%s)\"];\n", node.ID, node.Name, node.Type))
+type AgentNode struct {
+	Name   string
+	Prompt string
+	Tools  []ToolNode
+}
+
+type ToolNode struct {
+	Name     string
+	Server   string
+	RiskTag  string // e.g., "[OK]" or "[⚠️ OVER-PERMISSIONED]"
+}
+
+func RenderASCII(w io.Writer, g Graph) {
+	for _, agent := range g.Agents {
+		fmt.Fprintf(w, "Agent: %s\n", agent.Name)
+		fmt.Fprintf(w, "├── Prompt: %s\n", agent.Prompt)
+		fmt.Fprintln(w, "└── Tools:")
+		for i, tool := range agent.Tools {
+			connector := "├──"
+			if i == len(agent.Tools)-1 {
+				connector = "└──"
+			}
+			fmt.Fprintf(w, "    %s %s/%s %s\n", connector, tool.Server, tool.Name, tool.RiskTag)
+		}
+		fmt.Fprintln(w)
 	}
+}
 
-	sb.WriteString("\n")
-	for _, edge := range sg.Edges {
-		sb.WriteString(fmt.Sprintf("  \"%s\" -> \"%s\" [label=\"%s\"];\n", edge.SourceID, edge.TargetID, edge.Type))
+func RenderMermaid(w io.Writer, g Graph) {
+	fmt.Fprintln(w, "```mermaid")
+	fmt.Fprintln(w, "graph TD")
+	for _, agent := range g.Agents {
+		aID := strings.ReplaceAll(agent.Name, "-", "_")
+		fmt.Fprintf(w, "  %s[%s] --> %s_prompt[%s]\n", aID, agent.Name, aID, agent.Prompt)
+		for _, tool := range agent.Tools {
+			tID := strings.ReplaceAll(tool.Name, "-", "_")
+			fmt.Fprintf(w, "  %s --> %s[%s/%s]\n", aID, tID, tool.Server, tool.Name)
+		}
 	}
-
-	sb.WriteString("}\n")
-	return sb.String()
+	fmt.Fprintln(w, "```")
 }
