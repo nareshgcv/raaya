@@ -1,46 +1,44 @@
 package discovery
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 
-	"github.com/raaya/pkg/graph"
+	"raaya/pkg/graph"
 )
 
-func RegisterAgentPrompt(agentName, promptPath, model string, sg *graph.SecurityGraph) error {
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return err
-	}
+var modelPattern = regexp.MustCompile(`(?i)(gpt-4o|gpt-3\.5-turbo|claude-3-5-sonnet|claude-3-haiku|gemini-1\.5-pro)`)
 
-	agentID := "agent:" + agentName
-	sg.AddNode(&graph.Node{
-		ID:   agentID,
-		Type: graph.NodeAgent,
-		Name: agentName,
-		Metadata: map[string]interface{}{
-			"prompt_length": len(content),
-			"model":         model,
-		},
-		Location: &graph.SourceLocation{
-			FilePath: promptPath,
-		},
+func ScanPrompts(rootDir string, sg *graph.SecurityGraph) error {
+	return filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
+		name := filepath.Base(path)
+		if name == "system_prompt.txt" || name == "prompt.md" || filepath.Ext(path) == ".prompt" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+
+			promptID := fmt.Sprintf("prompt:%s", path)
+			meta := make(map[string]string)
+
+			if match := modelPattern.FindString(string(data)); match != "" {
+				meta["detected_model"] = match
+			}
+
+			sg.AddNode(graph.AssetNode{
+				ID:         promptID,
+				Kind:       graph.KindAgentPrompt,
+				Name:       name,
+				SourceFile: path,
+				Metadata:   meta,
+			})
+		}
+		return nil
 	})
-
-	if model != "" {
-		modelID := "model:" + model
-		sg.AddNode(&graph.Node{
-			ID:   modelID,
-			Type: graph.NodeModel,
-			Name: model,
-		})
-
-		sg.AddEdge(&graph.Edge{
-			ID:       agentID + "->" + modelID,
-			SourceID: agentID,
-			TargetID: modelID,
-			Type:     graph.EdgeUsesModel,
-		})
-	}
-
-	return nil
 }
