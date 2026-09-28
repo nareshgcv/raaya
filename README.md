@@ -34,6 +34,7 @@ Raaya discovers those relationships, builds an in-memory **Security Graph**, ana
           ↓         ↓         ↓
        Secrets   Exposure  Reachability
 
+---
 
 Why Raaya?
 
@@ -59,10 +60,21 @@ Raaya is designed to make that capability chain visible.
 
 Instead of only reporting:
 
+```bash
 database_query() exists
----
 
-## ✨ Features
+```
+
+Raaya can work toward explaining:
+```bash
+Agent → MCP Server → database_query → production_db
+
+New reachable capability:
+  PostgreSQL access
+
+```
+---
+### Features
 
 ### 🔍 Multi-Source Discovery
 
