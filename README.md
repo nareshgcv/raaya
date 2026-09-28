@@ -1,15 +1,65 @@
 # 🛡️ Raaya
 
-**Static Security & Blast Radius Analysis for AI Agents and MCP Infrastructure**
 
-Raaya is a lightweight, single-binary security scanner built in Go for analyzing the security surface of AI agents and Model Context Protocol (MCP) infrastructure.
 
-It discovers AI-agent configurations, MCP servers, tool definitions, prompts, local listeners, and credentials, then builds an in-memory **Security Graph** to identify security findings and calculate transitive capability exposure.
+> **Static Security & Blast Radius Analysis for AI Agents and MCP Infrastructure**
 
-Raaya is designed to run **locally, quickly, and without external infrastructure**.
+Raaya sits at the developer-facing intersection of application security, MCP/agent security, and AI security posture. Its focus is **pre-deployment static capability and reachability analysis of AI agent architectures**—helping developers discover what their agents can access and identify security risks before shipping to production.
 
-> **Discover what your AI agent can access before it reaches production.**
+## What is Raaya?
 
+Raaya answers a simple question:
+
+> **What can my AI agent actually access?**
+
+Modern AI agents can connect to MCP servers, tools, databases, files, APIs, cloud services, local services, and eventually other agents. The security risk is not always visible from an individual configuration file or source-code line—it can emerge from the relationships between agents, tools, capabilities, and resources.
+
+Raaya discovers those relationships, builds an in-memory **Security Graph**, analyzes reachability and transitive blast radius, and surfaces actionable security findings.
+
+```text
+                    AI Agent
+                       │
+              ┌────────┼────────┐
+              ↓        ↓        ↓
+           MCP       Tools    Services
+           Server      │        │
+              │        │        │
+              ↓        ↓        ↓
+           Resources  Files   APIs / DB
+                    │
+                    ↓
+              Security Graph
+                    │
+          ┌─────────┼─────────┐
+          ↓         ↓         ↓
+       Secrets   Exposure  Reachability
+
+
+Why Raaya?
+
+Traditional security scanners are excellent at finding code vulnerabilities, dependency issues, and exposed secrets. MCP and agentic systems introduce another question:
+
+What capabilities become reachable through the agent's tool and infrastructure relationships?
+
+For example:
+```bash
+Agent
+  ↓
+MCP Server
+  ↓
+database_query()
+  ↓
+PostgreSQL
+  ↓
+production_db
+
+```
+
+Raaya is designed to make that capability chain visible.
+
+Instead of only reporting:
+
+database_query() exists
 ---
 
 ## ✨ Features
