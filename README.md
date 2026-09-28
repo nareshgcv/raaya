@@ -33,7 +33,7 @@ Raaya discovers those relationships, builds an in-memory **Security Graph**, ana
           ┌─────────┼─────────┐
           ↓         ↓         ↓
        Secrets   Exposure  Reachability
-
+```
 ---
 
 Why Raaya?
