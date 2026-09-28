@@ -36,7 +36,7 @@ Raaya discovers those relationships, builds an in-memory **Security Graph**, ana
 ```
 ---
 
-Why Raaya?
+## Why Raaya?
 
 Traditional security scanners are excellent at finding code vulnerabilities, dependency issues, and exposed secrets. MCP and agentic systems introduce another question:
 
