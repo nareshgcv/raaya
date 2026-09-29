@@ -1,27 +1,38 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	IgnorePaths []string `yaml:"ignore_paths"`
-	Rules       struct {
-		Disabled []string `yaml:"disabled"`
-	} `yaml:"rules"`
+	ProjectName string   `yaml:"project_name"`
+	RulesPath   string   `yaml:"rules_path"`
+	Excludes    []string `yaml:"excludes"`
+	Severity    string   `yaml:"severity"`
 }
 
+// LoadConfig parses a .raaya.yaml file if present in the workspace.
 func LoadConfig(path string) (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{
+		ProjectName: "raaya-project",
+		Severity:    "MEDIUM",
+		Excludes:    []string{"vendor/", ".git/"},
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return cfg, nil // Return default empty config if file doesn't exist
+			return cfg, nil // Return default configuration if missing
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
-	err = yaml.Unmarshal(data, cfg)
-	return cfg, err
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
+	}
+
+	return cfg, nil
 }
