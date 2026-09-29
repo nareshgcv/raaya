@@ -1,46 +1,26 @@
 package discovery
 
 import (
-	"fmt"
+	"context"
 	"net"
 	"time"
-
-	"raaya/pkg/graph"
 )
 
-var commonMCPPorts = []int{8000, 8080, 3000, 5000, 9000, 9090}
-
-type PortProbeResult struct {
-	Port   int
-	Open   bool
-	Target string
+type LivePortScanner struct {
+	Timeout time.Duration
 }
 
-func ProbeLocalhostPorts(sg *graph.SecurityGraph) []PortProbeResult {
-	var results []PortProbeResult
+func NewLivePortScanner() *LivePortScanner {
+	return &LivePortScanner{Timeout: 2 * time.Second}
+}
 
-	for _, port := range commonMCPPorts {
-		target := fmt.Sprintf("127.0.0.1:%d", port)
-		conn, err := net.DialTimeout("tcp", target, 200*time.Millisecond)
-
-		if err == nil {
-			conn.Close()
-			results = append(results, PortProbeResult{Port: port, Open: true, Target: target})
-
-			serverID := fmt.Sprintf("live_mcp_server:%d", port)
-			sg.AddNode(graph.AssetNode{
-				ID:         serverID,
-				Kind:       graph.KindMCPServer,
-				Name:       fmt.Sprintf("Live MCP Server (Port %d)", port),
-				SourceFile: "localhost",
-				Metadata: map[string]string{
-					"transport": "tcp/sse",
-					"endpoint":  target,
-				},
-			})
-		} else {
-			results = append(results, PortProbeResult{Port: port, Open: false, Target: target})
-		}
+// CheckEndpoint verifies if an MCP Server or microservice port is listening.
+func (l *LivePortScanner) CheckEndpoint(ctx context.Context, hostPort string) bool {
+	d := net.Dialer{Timeout: l.Timeout}
+	conn, err := d.DialContext(ctx, "tcp", hostPort)
+	if err != nil {
+		return false
 	}
-	return results
+	conn.Close()
+	return true
 }
