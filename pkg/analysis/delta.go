@@ -1,70 +1,69 @@
 package analysis
 
 import (
-	"raaya/pkg/blastradius"
 	"raaya/pkg/graph"
 )
 
-type SurfaceStatus string
-
-const (
-	SurfaceStable   SurfaceStatus = "STABLE"
-	SurfaceExpanded SurfaceStatus = "EXPANDED"
-	SurfaceReduced  SurfaceStatus = "REDUCED"
-)
-
-type GraphDiff struct {
-	AddedNodes      []graph.Node                   `json:"added_nodes"`
-	RemovedNodes    []graph.Node                   `json:"removed_nodes"`
-	AddedPaths      []blastradius.ReachabilityPath `json:"added_paths"`
-	EscalatedCaps  []graph.Capability             `json:"escalated_capabilities"`
-	SecuritySurface SurfaceStatus                  `json:"security_surface_status"`
+// CapabilityDiff captures security posture shifts between commits or PRs.
+type CapabilityDiff struct {
+	AddedNodes     []*graph.Node `json:"added_nodes"`
+	RemovedNodes   []*graph.Node `json:"removed_nodes"`
+	AddedEdges     []graph.Edge  `json:"added_edges"`
+	Escalations    []graph.Edge  `json:"escalations"`
+	HasRegressions bool          `json:"has_regressions"`
 }
 
-func ComputeDiff(base, target *graph.SecurityGraph) *GraphDiff {
-	diff := &GraphDiff{
-		AddedNodes:      make([]graph.Node, 0),
-		RemovedNodes:    make([]graph.Node, 0),
-		AddedPaths:      make([]blastradius.ReachabilityPath, 0),
-		EscalatedCaps:  make([]graph.Capability, 0),
-		SecuritySurface: SurfaceStable,
+// ComputeDiff compares base vs head security graphs.
+func ComputeDiff(base, head *graph.Graph) *CapabilityDiff {
+	diff := &CapabilityDiff{
+		AddedNodes:   make([]*graph.Node, 0),
+		RemovedNodes: make([]*graph.Node, 0),
+		AddedEdges:   make([]graph.Edge, 0),
+		Escalations:  make([]graph.Edge, 0),
 	}
 
-	for id, node := range target.Nodes {
+	// Detect Node additions
+	for id, headNode := range head.Nodes {
 		if _, exists := base.Nodes[id]; !exists {
-			diff.AddedNodes = append(diff.AddedNodes, node)
-		}
-	}
-	for id, node := range base.Nodes {
-		if _, exists := target.Nodes[id]; !exists {
-			diff.RemovedNodes = append(diff.RemovedNodes, node)
+			diff.AddedNodes = append(diff.AddedNodes, headNode)
 		}
 	}
 
-	baseEngine := blastradius.NewReachabilityEngine(base)
-	targetEngine := blastradius.NewReachabilityEngine(target)
-
-	basePaths := baseEngine.ComputePaths()
-	targetPaths := targetEngine.ComputePaths()
-
-	baseMap := make(map[string]bool)
-	for _, p := range basePaths {
-		baseMap[p.AgentID+"->"+p.TargetID] = true
-	}
-
-	for _, tp := range targetPaths {
-		key := tp.AgentID + "->" + tp.TargetID
-		if !baseMap[key] {
-			diff.AddedPaths = append(diff.AddedPaths, tp)
-			diff.EscalatedCaps = append(diff.EscalatedCaps, tp.Capabilities...)
+	// Detect Node removals
+	for id, baseNode := range base.Nodes {
+		if _, exists := head.Nodes[id]; !exists {
+			diff.RemovedNodes = append(diff.RemovedNodes, baseNode)
 		}
 	}
 
-	if len(diff.AddedNodes) > 0 || len(diff.AddedPaths) > 0 {
-		diff.SecuritySurface = SurfaceExpanded
-	} else if len(diff.RemovedNodes) > 0 {
-		diff.SecuritySurface = SurfaceReduced
+	// Map base edges for O(1) comparison
+	baseEdgeMap := make(map[string]graph.Edge)
+	for _, edge := range base.Edges {
+		key := edge.SourceID + "->" + edge.TargetID
+		baseEdgeMap[key] = edge
+	}
+
+	// Compare Head edges against Base
+	for _, headEdge := range head.Edges {
+		key := headEdge.SourceID + "->" + headEdge.TargetID
+		if baseEdge, exists := baseEdgeMap[key]; !exists {
+			diff.AddedEdges = append(diff.AddedEdges, headEdge)
+			diff.HasRegressions = true
+		} else if isEscalation(baseEdge.Permission, headEdge.Permission) {
+			diff.Escalations = append(diff.Escalations, headEdge)
+			diff.HasRegressions = true
+		}
 	}
 
 	return diff
+}
+
+func isEscalation(basePerm, headPerm graph.PermissionLevel) bool {
+	weights := map[graph.PermissionLevel]int{
+		graph.PermRead:    1,
+		graph.PermExecute: 2,
+		graph.PermWrite:   3,
+		graph.PermAdmin:   4,
+	}
+	return weights[headPerm] > weights[basePerm]
 }
