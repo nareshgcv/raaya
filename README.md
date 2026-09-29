@@ -1011,9 +1011,6 @@ Instead, follow the security disclosure process defined by the repository mainta
 
 # 📄 License
 
-Add the project's applicable license here.
-
-For example:
 
 ```text
 MIT License
