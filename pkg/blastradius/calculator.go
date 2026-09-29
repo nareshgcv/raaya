@@ -7,7 +7,7 @@ import (
 	"raaya/pkg/graph"
 )
 
-// RiskLevel categorizes the severity of a computed blast radius.
+// RiskLevel categorizes the severity of a computed blast radius score.
 type RiskLevel string
 
 const (
@@ -17,30 +17,30 @@ const (
 	RiskCritical RiskLevel = "CRITICAL"
 )
 
-// ImpactSummary provides a breakdown of affected entities for security reporting.
+// ImpactSummary provides a categorized breakdown of reachable entities and peak permission level.
 type ImpactSummary struct {
-	TotalExposedNodes int                       `json:"total_exposed_nodes"`
-	NodesByType       map[graph.NodeType]int   `json:"nodes_by_type"`
-	HighestPermission  graph.PermissionLevel    `json:"highest_permission"`
-	HighRiskPaths     [][]string                `json:"high_risk_paths,omitempty"`
+	TotalExposedNodes int                    `json:"total_exposed_nodes"`
+	NodesByType       map[graph.NodeType]int `json:"nodes_by_type"`
+	HighestPermission graph.PermissionLevel  `json:"highest_permission"`
+	HighRiskPaths     [][]string             `json:"high_risk_paths,omitempty"`
 }
 
-// BlastRadiusResult holds the complete risk valuation for a targeted node.
+// BlastRadiusResult contains the calculated risk score, summary, and underlying propagation details.
 type BlastRadiusResult struct {
-	TargetNodeID string          `json:"target_node_id"`
-	RiskLevel    RiskLevel       `json:"risk_level"`
-	Score        float64         `json:"score"`
+	TargetNodeID string           `json:"target_node_id"`
+	RiskLevel    RiskLevel        `json:"risk_level"`
+	Score        float64          `json:"score"`
 	Impact       *ReachableImpact `json:"impact"`
-	Summary      ImpactSummary   `json:"summary"`
+	Summary      ImpactSummary    `json:"summary"`
 }
 
-// Calculator handles impact calculations and security surface risk scoring.
+// Calculator evaluates security surface exposure using the capability propagation engine.
 type Calculator struct {
 	engine *CapabilityEngine
 	graph  *graph.Graph
 }
 
-// NewCalculator initializes a new blast radius calculator instance.
+// NewCalculator creates a new Calculator instance wrapping the provided security graph.
 func NewCalculator(g *graph.Graph) *Calculator {
 	return &Calculator{
 		engine: NewCapabilityEngine(g),
@@ -48,20 +48,20 @@ func NewCalculator(g *graph.Graph) *Calculator {
 	}
 }
 
-// CalculateNodeImpact evaluates the damage potential if the target node is compromised.
+// CalculateNodeImpact evaluates the blast radius if a specific target node is compromised.
 func (c *Calculator) CalculateNodeImpact(nodeID string) (*BlastRadiusResult, error) {
 	targetNode, exists := c.graph.Nodes[nodeID]
 	if !exists {
 		return nil, fmt.Errorf("node with ID '%s' not found in security graph", nodeID)
 	}
 
-	// 1. Run BFS capability propagation
+	// 1. Delegate BFS graph traversal to propagation.go
 	impact := c.engine.CalculateBlastRadius(nodeID)
 
-	// 2. Aggregate impact stats across direct & transitive exposures
+	// 2. Aggregate counts and permissions
 	summary := c.summarizeImpact(impact)
 
-	// 3. Compute weighted blast radius score & determine risk level
+	// 3. Compute weighted blast radius score and risk classification
 	score := c.computeScore(targetNode, impact, summary)
 	riskLevel := c.determineRiskLevel(score, summary)
 
@@ -74,7 +74,7 @@ func (c *Calculator) CalculateNodeImpact(nodeID string) (*BlastRadiusResult, err
 	}, nil
 }
 
-// CalculateGlobalImpact runs blast radius calculations across all nodes in the graph.
+// CalculateGlobalImpact calculates blast radius metrics across every node in the graph.
 func (c *Calculator) CalculateGlobalImpact() map[string]*BlastRadiusResult {
 	results := make(map[string]*BlastRadiusResult)
 
@@ -88,7 +88,7 @@ func (c *Calculator) CalculateGlobalImpact() map[string]*BlastRadiusResult {
 	return results
 }
 
-// summarizeImpact organizes reachable nodes into structured counts and permissions.
+// summarizeImpact organizes reachable nodes into type frequencies and detects the highest permission path.
 func (c *Calculator) summarizeImpact(impact *ReachableImpact) ImpactSummary {
 	nodesByType := make(map[graph.NodeType]int)
 	allReachable := append([]*graph.Node{}, impact.DirectNodes...)
@@ -114,11 +114,11 @@ func (c *Calculator) summarizeImpact(impact *ReachableImpact) ImpactSummary {
 	return ImpactSummary{
 		TotalExposedNodes: len(allReachable),
 		NodesByType:       nodesByType,
-		HighestPermission:  highestPerm,
+		HighestPermission: highestPerm,
 	}
 }
 
-// computeScore calculates a numerical risk score (0.0 - 100.0) based on reachable capabilities.
+// computeScore computes a normalized risk score (0.0 - 100.0) based on reachability and permissions.
 func (c *Calculator) computeScore(target *graph.Node, impact *ReachableImpact, summary ImpactSummary) float64 {
 	baseWeight := 1.0
 	switch target.Type {
@@ -132,7 +132,6 @@ func (c *Calculator) computeScore(target *graph.Node, impact *ReachableImpact, s
 		baseWeight = 1.0
 	}
 
-	// Permission multiplier
 	permMultiplier := 1.0
 	switch summary.HighestPermission {
 	case graph.PermAdmin:
@@ -145,10 +144,9 @@ func (c *Calculator) computeScore(target *graph.Node, impact *ReachableImpact, s
 		permMultiplier = 1.0
 	}
 
-	// Score = (Direct Reach * 3 + Transitive Reach * 1.5) * Node Weight * Permission Multiplier
+	// Score = (Direct Reach * 3 + Transitive Reach * 1.5) * Node Base Weight * Permission Multiplier
 	rawScore := (float64(len(impact.DirectNodes))*3.0 + float64(len(impact.TransitiveNodes))*1.5) * baseWeight * permMultiplier
 
-	// Cap maximum score to 100.0
 	if rawScore > 100.0 {
 		return 100.0
 	}
@@ -156,7 +154,7 @@ func (c *Calculator) computeScore(target *graph.Node, impact *ReachableImpact, s
 	return rawScore
 }
 
-// determineRiskLevel maps numerical scores and exposed asset criticalities to risk thresholds.
+// determineRiskLevel assigns a categorical risk rating based on score and critical resource exposures.
 func (c *Calculator) determineRiskLevel(score float64, summary ImpactSummary) RiskLevel {
 	if summary.HighestPermission == graph.PermAdmin || summary.NodesByType[graph.NodeResource] > 5 || score >= 75.0 {
 		return RiskCritical
@@ -170,7 +168,7 @@ func (c *Calculator) determineRiskLevel(score float64, summary ImpactSummary) Ri
 	return RiskLow
 }
 
-// GetTopKHighRiskNodes returns the top K nodes with the highest blast radius scores.
+// GetTopKHighRiskNodes isolates the top K highest-risk entities in the scan.
 func GetTopKHighRiskNodes(results map[string]*BlastRadiusResult, k int) []*BlastRadiusResult {
 	list := make([]*BlastRadiusResult, 0, len(results))
 	for _, res := range results {
