@@ -1,60 +1,63 @@
 package graph
 
-import "fmt"
+import "time"
 
-type NodeKind string
-
-const (
-	KindAgentPrompt NodeKind = "agent_prompt"
-	KindMCPServer   NodeKind = "mcp_server"
-	KindToolDef     NodeKind = "tool_definition"
-	KindSecret      NodeKind = "secret"
-)
-
-type AssetNode struct {
-	ID         string            `json:"id"`
-	Kind       NodeKind          `json:"kind"`
-	Name       string            `json:"name"`
-	SourceFile string            `json:"source_file"`
-	LineNumber int               `json:"line_number,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
-}
-
-type EdgeRelation string
+// NodeType represents the entity level in the security graph.
+type NodeType string
 
 const (
-	RelLoadsPrompt EdgeRelation = "LOADS_PROMPT"
-	RelUsesServer  EdgeRelation = "USES_SERVER"
-	RelExposesTool EdgeRelation = "EXPOSES_TOOL"
-	RelUsesSecret  EdgeRelation = "USES_SECRET"
+	NodeAgent     NodeType = "AGENT"
+	NodeMCPServer NodeType = "MCP_SERVER"
+	NodeTool      NodeType = "TOOL"
+	NodeResource  NodeType = "RESOURCE"
 )
 
-type DirectEdge struct {
-	FromID   string       `json:"from_id"`
-	ToID     string       `json:"to_id"`
-	Relation EdgeRelation `json:"relation"`
+// PermissionLevel defines access rights for tools and resources.
+type PermissionLevel string
+
+const (
+	PermRead      PermissionLevel = "READ"
+	PermWrite     PermissionLevel = "WRITE"
+	PermExecute   PermissionLevel = "EXECUTE"
+	PermAdmin     PermissionLevel = "ADMIN"
+)
+
+// Node represents a single element in the MCP security topology.
+type Node struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Type        NodeType          `json:"type"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Permissions []PermissionLevel `json:"permissions,omitempty"`
 }
 
-type SecurityGraph struct {
-	Nodes map[string]AssetNode `json:"nodes"`
-	Edges []DirectEdge         `json:"edges"`
+// Edge represents reachability or capability invocation between nodes.
+type Edge struct {
+	SourceID    string          `json:"source_id"`
+	TargetID    string          `json:"target_id"`
+	Capability  string          `json:"capability"`
+	Permission  PermissionLevel `json:"permission"`
+	Transitive  bool            `json:"transitive"`
 }
 
-func NewSecurityGraph() *SecurityGraph {
-	return &SecurityGraph{
-		Nodes: make(map[string]AssetNode),
-		Edges: make([]DirectEdge, 0),
+// Graph holds the complete directed security reachability model.
+type Graph struct {
+	Nodes map[string]*Node `json:"nodes"`
+	Edges []Edge           `json:"edges"`
+}
+
+// NewGraph initializes an empty security graph.
+func NewGraph() *Graph {
+	return &Graph{
+		Nodes: make(map[string]*Node),
+		Edges: make([]Edge, 0),
 	}
 }
 
-func (g *SecurityGraph) AddNode(node AssetNode) {
+func (g *Graph) AddNode(node *Node) {
 	g.Nodes[node.ID] = node
 }
 
-func (g *SecurityGraph) AddEdge(fromID, toID string, rel EdgeRelation) {
-	g.Edges = append(g.Edges, DirectEdge{
-		FromID:   fromID,
-		ToID:     toID,
-		Relation: rel,
-	})
+func (g *Graph) AddEdge(edge Edge) {
+	g.Edges = append(g.Edges, edge)
 }
