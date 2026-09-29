@@ -20,37 +20,42 @@ Raaya is designed to run locally, quickly, and without external infrastructure.
 
 > **Discover what your AI agent can access before it reaches production.**
 ---
-### Features
 
-### 🔍 Multi-Source Discovery
+#✨ Key Features
+🔍 Hybrid Discovery Engine
 
-Raaya automatically discovers AI security assets from multiple sources:
+Raaya combines multiple discovery techniques instead of relying on a single source of truth.
 
-* `.cursor/mcp.json`
-* `mcp.json`
-* MCP server configurations
-* Python tool definitions
-* TypeScript tool definitions
-* Agent/prompt references
-* Environment and credential configuration
-* Local TCP/SSE listeners
+It can inspect:
 
-Supported Python patterns include:
+Source-code ASTs
+MCP configuration files
+.cursor/mcp.json
+mcp.json
+claude_desktop_config.json
+Python tool definitions
+TypeScript tool definitions
+Agent and prompt references
+// @raaya:capability annotations
+Environment and credential configuration
+Local TCP/SSE listeners
+Live MCP runtime endpoints
 
-```python
-@mcp.tool
-def search(...):
-    ...
+Conceptually:
+
+```bash           ┌──────────────────────┐
+                 │   Hybrid Discovery   │
+                 └──────────┬───────────┘
+                            │
+       ┌────────────────────┼────────────────────┐
+       ▼                    ▼                    ▼
+   Source AST          MCP Configs          Runtime Ports
+       │                    │                    │
+       └────────────────────┼────────────────────┘
+                            ▼
+                    Discovered Assets
+
 ```
-
-and:
-
-```python
-@tool
-def execute(...):
-    ...
-```
-
 ---
 
 ### 🌐 Active Listener Discovery
