@@ -21,7 +21,8 @@ Raaya is designed to run locally, quickly, and without external infrastructure.
 > **Discover what your AI agent can access before it reaches production.**
 ---
 
-#✨ Key Features
+### ✨ Key Features
+
 🔍 Hybrid Discovery Engine
 
 Raaya combines multiple discovery techniques instead of relying on a single source of truth.
