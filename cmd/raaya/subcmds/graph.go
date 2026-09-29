@@ -1,48 +1,59 @@
-package main
+package subcmds
 
 import (
-	"context"
 	"fmt"
+	"os"
 
-	"raaya/pkg/analysis"
-	"raaya/pkg/graph"
-	"raaya/pkg/reporter"
+	"github.com/spf13/cobra"
+	"raaya/pkg/blastradius"
+	"raaya/pkg/discovery"
 )
 
-func runGraphDiffScan() {
-	ctx := context.Background()
+var (
+	exportMermaid bool
+	showPaths     bool
+)
 
-	// 1. Base Graph (simulated HEAD~1 scan)
-	baseGraph := graph.NewSecurityGraph()
-	baseGraph.AddNode(graph.Node{ID: "agent:support", Type: graph.NodeAgent, Name: "SupportAgent"})
-	baseGraph.AddNode(graph.Node{ID: "mcp:db", Type: graph.NodeMCPServer, Name: "DBServer"})
-	baseGraph.AddEdge("agent:support", "mcp:db")
+var GraphCmd = &cobra.Command{
+	Use:   "graph",
+	Short: "Export or visualize the Agentic Security DAG and reachability paths",
+	Run: func(cmd *cobra.Command, args []string) {
+		repoPath, _ := cmd.Flags().GetString("path")
+		if repoPath == "" {
+			repoPath = "."
+		}
 
-	// 2. Current Graph (working tree scan with expanded capabilities)
-	currentGraph := graph.NewSecurityGraph()
-	currentGraph.AddNode(graph.Node{ID: "agent:support", Type: graph.NodeAgent, Name: "SupportAgent"})
-	currentGraph.AddNode(graph.Node{ID: "mcp:db", Type: graph.NodeMCPServer, Name: "DBServer"})
-	currentGraph.AddNode(graph.Node{ID: "tool:write_sql", Type: graph.NodeTool, Name: "WriteSQL", Capabilities: []graph.Capability{graph.CapWriteDatabase}})
+		// 1. Build Hybrid Security Graph
+		scanner := discovery.NewHybridScanner(repoPath)
+		sg, err := scanner.BuildGraphFromASTAndConfig("mcp.json")
+		if err != nil {
+			fmt.Printf("Error building security graph: %v\n", err)
+			os.Exit(1)
+		}
 
-	currentGraph.AddEdge("agent:support", "mcp:db")
-	currentGraph.AddEdge("mcp:db", "tool:write_sql")
+		// 2. Transitive Capability Propagation
+		sg.PropagateTransitiveCapabilities()
 
-	// 3. Propagate capabilities transitively
-	currentGraph.PropagateTransitiveCapabilities()
+		// 3. Render Reachability Paths if requested
+		if showPaths {
+			calc := blastradius.NewBlastRadiusCalculator(sg)
+			paths := calc.ComputeAgentReachability()
 
-	// 4. Differential change detection
-	diff := analysis.CompareGraphs(baseGraph, currentGraph)
+			fmt.Println("=== Agent Reachability Paths ===")
+			for _, p := range paths {
+				fmt.Printf("Agent [%s] -> Target [%s] (%s)\n  Path: %v\n  Capabilities: %v\n\n",
+					p.AgentID, p.TargetID, p.TargetType, p.Path, p.Capabilities)
+			}
+			return
+		}
 
-	// 5. Evaluate Rego rules
-	evaluator := analysis.NewRegoEvaluator("")
-	violations, err := evaluator.Evaluate(ctx, currentGraph, diff)
-	if err != nil {
-		panic(err)
-	}
+		// 4. Default / Export Mermaid DAG
+		fmt.Println(sg.ExportMermaid())
+	},
+}
 
-	// 6. Generate PR Comment Markdown
-	prReporter := reporter.NewPRCommentReporter()
-	output := prReporter.GenerateMarkdown(diff, violations, currentGraph)
-
-	fmt.Println(output)
+func init() {
+	GraphCmd.Flags().StringP("path", "p", ".", "Path to repository root")
+	GraphCmd.Flags().BoolVarP(&exportMermaid, "mermaid", "m", true, "Output graph as Mermaid JS format")
+	GraphCmd.Flags().BoolVarP(&showPaths, "paths", "r", false, "Show calculated reachability paths")
 }
