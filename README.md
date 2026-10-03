@@ -204,48 +204,63 @@ This makes security reachability part of the normal pull-request workflow.
 ## 🧠 Architecture
 
 ```text
-                    ┌──────────────────────┐
-                    │    Source Code       │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   Discovery Engine   │
-                    │                      │
-                    │ AST / MCP / Runtime  │
-                    │ Annotations / Prompts│
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │    Security Graph    │
-                    │                      │
-                    │ Agent                │
-                    │ MCP Server           │
-                    │ Tool                 │
-                    │ Resource             │
-                    └──────────┬───────────┘
-                               │
-                 ┌─────────────┼─────────────┐
-                 │             │             │
-                 ▼             ▼             ▼
-          ┌────────────┐ ┌──────────┐ ┌────────────┐
-          │ Capability │ │  Blast   │ │   Policy   │
-          │ Propagation│ │  Radius  │ │ Evaluation │
-          └──────┬─────┘ └────┬─────┘ └─────┬──────┘
-                 │             │             │
-                 └─────────────┼─────────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │ Security Analysis    │
-                    └──────────┬───────────┘
-                               │
-             ┌─────────────────┼──────────────────┐
-             │                 │                  │
-             ▼                 ▼                  ▼
-        Terminal          JSON / SARIF       GitHub PR
-        Output             Reports           Comments
-```
+                    ┌─────────────────────────────┐
+                    │      AI Application         │
+                    │        Environment          │
+                    │                             │
+                    │ Source Code • MCP Config    │
+                    │ Prompts • Annotations       │
+                    │ Runtime / Live Services     │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │      Discovery Engine        │
+                    │                             │
+                    │  AST / MCP / Runtime        │
+                    │  Prompts / Annotations       │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │       Security Graph         │
+                    │                             │
+                    │  Agent                      │
+                    │  MCP Server                 │
+                    │  Tool                       │
+                    │  Resource                   │
+                    └──────────────┬──────────────┘
+                                   │
+                  ┌────────────────┼────────────────┐
+                  │                │                │
+                  ▼                ▼                ▼
+          ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+          │  Capability  │ │    Blast     │ │   Policy     │
+          │ Propagation  │ │    Radius    │ │  Evaluation  │
+          └───────┬──────┘ └───────┬──────┘ └───────┬──────┘
+                  │                │                │
+                  └────────────────┼────────────────┘
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │      Security Analysis      │
+                    │                             │
+                    │  Reachability               │
+                    │  Permission Escalation      │
+                    │  Surface Expansion          │
+                    │  Transitive Exposure        │
+                    └──────────────┬──────────────┘
+                                   │
+                 ┌─────────────────┼─────────────────┐
+                 │                 │                 │
+                 ▼                 ▼                 ▼
+          ┌────────────┐    ┌─────────────┐    ┌──────────────┐
+          │  Terminal  │    │ JSON / SARIF│    │  GitHub PR   │
+          │   Output   │    │   Reports   │    │   Comments   │
+          └────────────┘    └─────────────┘    └──────────────┘
 
+```
+        
 ---
 
 ## 📂 Project Structure
