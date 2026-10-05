@@ -58,6 +58,7 @@ func ParsePermission(s string) (PermissionLevel, bool) {
 func MaxPermission(ps ...PermissionLevel) PermissionLevel {
 	best := PermNone
 	for _, p := range ps {
+		if p.Rank() > best.Rank() {
 			best = p
 		}
 	}
