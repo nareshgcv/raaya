@@ -34,6 +34,12 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
+	}
+	subcmds.Version = version
+	discovery.ClientVersion = version
+
+	commands := map[string]func([]string) (int, error){
+		"check":  subcmds.Check,
 		"diff":   subcmds.Diff,
 		"graph":  subcmds.Graph,
 		"blast":  subcmds.Blast,
