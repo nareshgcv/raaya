@@ -32,6 +32,16 @@ func runFakeServer() {
 	for in.Scan() {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params struct {
+				Cursor string `json:"cursor"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(in.Bytes(), &req) != nil || req.Method == "" || len(req.ID) == 0 {
+			continue // responses and notifications
+		}
+		switch req.Method {
+		case "initialize":
 			reply(req.ID, map[string]any{
 				"protocolVersion": mcpProtocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
