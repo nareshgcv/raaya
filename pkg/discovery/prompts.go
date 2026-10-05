@@ -74,6 +74,23 @@ func parseAgentFrontmatter(doc string) (AgentDefinition, bool) {
 			if item, ok := strings.CutPrefix(trimmed, "- "); ok {
 				def.Tools = append(def.Tools, unquote(item))
 				continue
+			}
+			inToolList = false
+		}
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		key, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		switch strings.TrimSpace(key) {
+		case "name":
+			def.Name = unquote(value)
+		case "tools":
+			def.Tools = []string{} // present, so the subagent is restricted
+			if value == "" {
 				inToolList = true
 				continue
 			}
