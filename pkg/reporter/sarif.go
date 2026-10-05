@@ -81,7 +81,7 @@ func sarifLevel(s analysis.Severity) string {
 	}
 }
 
-// SARIF writes findings as SARIF 1.0.0 for GitHub code scanning.
+// SARIF writes findings as SARIF 2.1.0 for GitHub code scanning.
 func SARIF(w io.Writer, findings []analysis.Finding, version string) error {
 	ruleList := []sarifRule{}
 	known := map[string]bool{}
