@@ -33,6 +33,32 @@ func typeFor(id string) graph.NodeType {
 	}
 }
 
+func TestReachUsesWeakestEdgeOnPath(t *testing.T) {
+	g := build(
+		graph.Edge{SourceID: "agent", TargetID: "server", Relation: "connects"},
+		graph.Edge{SourceID: "server", TargetID: "tool-reader", Relation: "exposes", Permission: graph.PermRead},
+		graph.Edge{SourceID: "tool-reader", TargetID: "db", Relation: "uses", Permission: graph.PermAdmin},
+	)
+	r := From(g, "agent")
+	if got := r["db"]; got != graph.PermRead {
+		t.Fatalf("db: got %q, want READ (capped by the read-only tool)", got)
+	}
+	if p, ok := r["server"]; !ok || p != graph.PermNone {
+		t.Fatalf("server: got %q/%v, want structural reach", p, ok)
+	}
+}
+
+func TestReachTakesStrongestPath(t *testing.T) {
+	g := build(
+		graph.Edge{SourceID: "agent", TargetID: "server", Relation: "connects"},
+		graph.Edge{SourceID: "server", TargetID: "tool-reader", Relation: "exposes", Permission: graph.PermRead},
+		graph.Edge{SourceID: "server", TargetID: "tool-writer", Relation: "exposes", Permission: graph.PermWrite},
+		graph.Edge{SourceID: "tool-reader", TargetID: "db", Relation: "uses", Permission: graph.PermAdmin},
+		graph.Edge{SourceID: "tool-writer", TargetID: "db", Relation: "uses", Permission: graph.PermAdmin},
+	)
+	if got := From(g, "agent")["db"]; got != graph.PermWrite {
+		t.Fatalf("db: got %q, want WRITE", got)
+	}
 }
 
 func TestReachHandlesCycles(t *testing.T) {
