@@ -2,55 +2,82 @@ package graph
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-// RenderMermaid exports the security graph as a Mermaid flowchart diagram.
-func RenderMermaid(g *Graph) string {
-	var sb strings.Builder
-	sb.WriteString("flowchart TD\n")
-
-	// Group/Style nodes by type
-	for _, node := range g.Nodes {
-		switch node.Type {
+// Mermaid renders the graph as a Mermaid flowchart. Inferred edges are dashed.
+func (g *Graph) Mermaid() string {
+	var b strings.Builder
+	b.WriteString("graph LR\n")
+	ids := map[string]string{}
+	for i, n := range g.SortedNodes() {
+		id := fmt.Sprintf("n%d", i)
+		ids[n.ID] = id
+		label := strings.NewReplacer(`"`, "#quot;", "\n", " ").Replace(n.Name)
+		switch n.Type {
 		case NodeAgent:
-			sb.WriteString(fmt.Sprintf("    %s([🤖 Agent: %s])\n", node.ID, node.Name))
+			fmt.Fprintf(&b, "  %s([\"%s\"]):::agent\n", id, label)
 		case NodeMCPServer:
-			sb.WriteString(fmt.Sprintf("    %s[🖥️ MCP Server: %s]\n", node.ID, node.Name))
+			fmt.Fprintf(&b, "  %s[\"%s\"]:::server\n", id, label)
 		case NodeTool:
-			sb.WriteString(fmt.Sprintf("    %s{{🛠️ Tool: %s}}\n", node.ID, node.Name))
-		case NodeResource:
-			sb.WriteString(fmt.Sprintf("    %s[(🗄️ Resource: %s)]\n", node.ID, node.Name))
+			fmt.Fprintf(&b, "  %s(\"%s\"):::tool\n", id, label)
+		default:
+			fmt.Fprintf(&b, "  %s[(\"%s\")]:::resource\n", id, label)
 		}
 	}
-
-	// Render reachability edges
-	for _, edge := range g.Edges {
-		label := string(edge.Permission)
-		if edge.Capability != "" {
-			label = fmt.Sprintf("%s: %s", edge.Capability, edge.Permission)
+	for _, e := range g.SortedEdges() {
+		from, okFrom := ids[e.SourceID]
+		to, okTo := ids[e.TargetID]
+		if !okFrom || !okTo {
+			continue
 		}
-		sb.WriteString(fmt.Sprintf("    %s -->|%s| %s\n", edge.SourceID, label, edge.TargetID))
+		arrow := "-->"
+		if e.Inferred {
+			arrow = "-.->"
+		}
+		if e.Permission != PermNone {
+			fmt.Fprintf(&b, "  %s %s|%s| %s\n", from, arrow, e.Permission, to)
+		} else {
+			fmt.Fprintf(&b, "  %s %s %s\n", from, arrow, to)
+		}
 	}
-
-	return sb.String()
+	b.WriteString("  classDef agent fill:#e0e7ff,stroke:#4338ca\n")
+	b.WriteString("  classDef server fill:#fae8ff,stroke:#a21caf\n")
+	b.WriteString("  classDef tool fill:#dbeafe,stroke:#1d4ed8\n")
+	b.WriteString("  classDef resource fill:#fee2e2,stroke:#b91c1c\n")
+	return b.String()
 }
 
-// RenderDOT exports the graph to DOT format for Graphviz visualization.
-func RenderDOT(g *Graph) string {
-	var sb strings.Builder
-	sb.WriteString("digraph RaayaSecurityGraph {\n")
-	sb.WriteString("  rankdir=LR;\n")
-	sb.WriteString("  node [shape=box, style=rounded, fontname=\"Helvetica\"];\n\n")
-
-	for _, node := range g.Nodes {
-		sb.WriteString(fmt.Sprintf("  \"%s\" [label=\"%s\\n(%s)\"];\n", node.ID, node.Name, node.Type))
+// DOT renders the graph in Graphviz format; render SVG with `dot -Tsvg`.
+func (g *Graph) DOT() string {
+	shapes := map[NodeType]string{NodeAgent: "oval", NodeMCPServer: "box", NodeTool: "component", NodeResource: "cylinder"}
+	var b strings.Builder
+	b.WriteString("digraph raaya {\n  rankdir=LR;\n")
+	for _, n := range g.SortedNodes() {
+		shape := shapes[n.Type]
+		if shape == "" {
+			shape = "ellipse"
+		}
+		fmt.Fprintf(&b, "  %s [label=%s, shape=%s];\n", strconv.Quote(n.ID), strconv.Quote(n.Name), shape)
 	}
-
-	for _, edge := range g.Edges {
-		sb.WriteString(fmt.Sprintf("  \"%s\" -> \"%s\" [label=\"%s\"];\n", edge.SourceID, edge.TargetID, edge.Permission))
+	for _, e := range g.SortedEdges() {
+		if _, ok := g.Nodes[e.TargetID]; !ok {
+			continue
+		}
+		var attrs []string
+		if e.Permission != PermNone {
+			attrs = append(attrs, "label="+strconv.Quote(string(e.Permission)))
+		}
+		if e.Inferred {
+			attrs = append(attrs, "style=dashed")
+		}
+		fmt.Fprintf(&b, "  %s -> %s", strconv.Quote(e.SourceID), strconv.Quote(e.TargetID))
+		if len(attrs) > 0 {
+			fmt.Fprintf(&b, " [%s]", strings.Join(attrs, ", "))
+		}
+		b.WriteString(";\n")
 	}
-
-	sb.WriteString("}\n")
-	return sb.String()
+	b.WriteString("}\n")
+	return b.String()
 }
