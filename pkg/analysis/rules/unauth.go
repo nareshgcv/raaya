@@ -2,63 +2,59 @@ package rules
 
 import (
 	"fmt"
-	"strings"
 
-	"raaya/pkg/graph"
+	"github.com/nareshgcv/raaya/pkg/blastradius"
+	"github.com/nareshgcv/raaya/pkg/graph"
 )
 
-type UnauthenticatedEndpointRule struct{}
-
-func (r *UnauthenticatedEndpointRule) ID() string { return "RAAYA-002-UNAUTH-ENDPOINT" }
-
-func (r *UnauthenticatedEndpointRule) Evaluate(sg *graph.SecurityGraph) []Finding {
-	var findings []Finding
-
-	for _, node := range sg.Nodes {
-		if node.Kind != graph.KindMCPServer {
-			continue
-		}
-
-		url := node.Metadata["url"]
-		command := node.Metadata["command"]
-		transport := node.Metadata["transport"]
-
-		// Check HTTP/SSE transport endpoints or live local listeners
-		isNetworkEndpoint := strings.HasPrefix(url, "http://") || 
-			strings.HasPrefix(url, "https://") || 
-			transport == "tcp/sse" || 
-			strings.Contains(command, "sse")
-
-		if !isNetworkEndpoint {
-			continue // Stdio-based local pipes do not expose HTTP endpoints
-		}
-
-		// Verify if the server node connects to any Secret or Auth Header edge
-		hasAuthSecret := false
-		for _, edge := range sg.Edges {
-			if edge.FromID == node.ID && edge.Relation == graph.RelUsesSecret {
-				hasAuthSecret = true
-				break
+// RAAYA001 and RAAYA002: capabilities an agent holds transitively, through
+// servers and tools, rather than through an explicit grant.
+func reachableCapabilities(g *graph.Graph) []Finding {
+	var out []Finding
+	reaches := map[string]blastradius.Reach{}
+	for _, agent := range g.NodesOfType(graph.NodeAgent) {
+		reaches[agent.ID] = blastradius.From(g, agent.ID)
+	}
+	for _, agent := range g.NodesOfType(graph.NodeAgent) {
+		parent := reaches[agent.Metadata[graph.MetaParentAgent]]
+		for _, r := range reaches[agent.ID].Sorted() {
+			// A subagent reaching what its parent already reaches adds noise, not risk.
+			if p, ok := parent[r.NodeID]; ok && p.Rank() >= r.Permission.Rank() {
+				continue
 			}
-		}
-
-		// Flag HTTP/SSE endpoints lacking connected credentials or headers
-		if !hasAuthSecret {
-			endpoint := url
-			if endpoint == "" {
-				endpoint = node.Metadata["endpoint"]
+			n := g.Nodes[r.NodeID]
+			switch {
+			case r.Permission.Rank() >= graph.PermExecute.Rank():
+				out = append(out, newFinding(g, "RAAYA001", SevHigh, agent.ID, n.ID,
+					fmt.Sprintf("%s can reach %s %q with %s%s", agent.Name, typeLabel(n.Type), n.Name, r.Permission, inferredNote(g, n.ID))))
+			case r.Permission == graph.PermWrite && n.Type == graph.NodeResource:
+				out = append(out, newFinding(g, "RAAYA002", SevMedium, agent.ID, n.ID,
+					fmt.Sprintf("%s can modify resource %q%s", agent.Name, n.Name, inferredNote(g, n.ID))))
 			}
-
-			findings = append(findings, Finding{
-				RuleID:           r.ID(),
-				Severity:         SeverityHigh,
-				Message:          fmt.Sprintf("MCP Server '%s' exposes a network endpoint (%s) without an explicit auth header or secret", node.Name, endpoint),
-				AssetID:          node.ID,
-				FilePath:         node.SourceFile,
-				AutofixAvailable: false,
-			})
 		}
 	}
+	return out
+}
 
-	return findings
+// RAAYA005: a server handed the filesystem root or a home directory.
+func broadFilesystemAccess(g *graph.Graph) []Finding {
+	var out []Finding
+	for _, e := range g.SortedEdges() {
+		res, server := g.Nodes[e.TargetID], g.Nodes[e.SourceID]
+		if res == nil || server == nil || res.Type != graph.NodeResource || res.Metadata[graph.MetaBroadPath] != "true" {
+			continue
+		}
+		out = append(out, newFinding(g, "RAAYA005", SevMedium, "", server.ID,
+			fmt.Sprintf("Server %q is given %q, which exposes the whole filesystem or home directory", server.Name, res.Name)))
+	}
+	return out
+}
+
+func inferredNote(g *graph.Graph, nodeID string) string {
+	for _, e := range g.Edges {
+		if e.TargetID == nodeID && e.Inferred {
+			return " (inferred from server configuration)"
+		}
+	}
+	return ""
 }
