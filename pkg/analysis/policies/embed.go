@@ -1,6 +1,9 @@
+// Package policies bundles Raaya's default Rego policy.
 package policies
 
-import "embed"
+import _ "embed"
 
-//go:embed *.rego
-var DefaultPolicies embed.FS
+// Default is the bundled policy, evaluated in builds with -tags rego.
+//
+//go:embed default.rego
+var Default string
