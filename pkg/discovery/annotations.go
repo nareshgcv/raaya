@@ -39,17 +39,6 @@ var skipDirs = map[string]bool{
 }
 
 var sourceLangs = map[string]string{
-	".py": "py", ".go": "go",
-	".js": "js", ".mjs": "js", ".cjs": "js", ".ts": "js", ".tsx": "js",
-}
-
-const (
-	maxSourceFileSize = 2 << 20
-	annotationReach   = 20 // an @raaya:capability comment applies within this many lines
-)
-
-// ScanSource walks root for Python, JS/TS and Go tool definitions. Hidden
-// directories, dependencies and build output are skipped.
 func ScanSource(root string) ([]SourceTool, error) {
 	var tools []SourceTool
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -98,6 +87,20 @@ func scanFile(path, rel, lang string) ([]SourceTool, error) {
 	defer f.Close()
 
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxSourceFileSize)
+
+	var (
+		out      []SourceTool
+		caps     []graph.PermissionLevel
+		capsLine int
+		lineNo   int
+		pyDecor  bool
+		pyName   string
+	)
+	emit := func(name string) {
+		t := SourceTool{Name: name, File: rel, Line: lineNo}
+		if caps != nil && lineNo-capsLine <= annotationReach {
+			t.Permissions = caps
 		}
 		out = append(out, t)
 		caps = nil
