@@ -94,6 +94,11 @@ func ListServer(ctx context.Context, spec ServerSpec, timeout time.Duration) (*L
 		err := c.paginate(ctx, "tools/list", func(page json.RawMessage) (string, error) {
 			var p struct {
 				Tools      []LiveTool `json:"tools"`
+				NextCursor string     `json:"nextCursor"`
+			}
+			if err := json.Unmarshal(page, &p); err != nil {
+				return "", err
+			}
 			res.Tools = append(res.Tools, p.Tools...)
 			return p.NextCursor, nil
 		})
@@ -277,6 +282,10 @@ func (c *stdioClient) answerServer(m rpcIn) {
 	_ = c.send(out)
 }
 
+func (c *stdioClient) send(msg rpcOut) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
 	}
 	_, err = c.stdin.Write(append(data, '\n'))
 	return err
