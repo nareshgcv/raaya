@@ -67,6 +67,13 @@ func Check(args []string) (int, error) {
 	}
 	switch strings.ToLower(*format) {
 	case "terminal", "text":
+		reporter.Check(w, g, findings, *output == "" && reporter.IsTerminal(os.Stdout))
+	case "json":
+		err = reporter.JSON(w, map[string]any{"findings": findings, "graph": g})
+	case "sarif":
+		err = reporter.SARIF(w, findings, Version)
+	case "markdown", "md":
+		reporter.CheckMarkdown(w, g, findings)
 	default:
 		err = fmt.Errorf("unknown --format %q", *format)
 	}
