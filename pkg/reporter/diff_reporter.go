@@ -1,39 +1,54 @@
 package reporter
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
-	"raaya/pkg/analysis"
+	"github.com/nareshgcv/raaya/pkg/analysis"
 )
 
-// RenderDiffJSON outputs structured JSON for pipeline integrations.
-func RenderDiffJSON(w io.Writer, diff *analysis.CapabilityDiff) error {
-	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(diff)
-}
+// Diff prints a capability diff for the terminal.
+func Diff(w io.Writer, d *analysis.Diff, color bool) {
+	s := style(color)
+	fmt.Fprintln(w, s.wrap("1", "Raaya capability diff"))
+	fmt.Fprintln(w)
 
-// RenderDiffTerminal prints a human-readable capability diff summary to the console.
-func RenderDiffTerminal(w io.Writer, diff *analysis.CapabilityDiff) {
-	fmt.Fprintln(w, "\n--- Raaya Capability Diff Report ---")
+	section := func(title string, changes []analysis.ReachChange, mark, code string) {
+		if len(changes) == 0 {
+			return
+		}
+		fmt.Fprintln(w, title+":")
+		for _, c := range changes {
+			var access string
+			switch mark {
+			case "~":
+				access = permLabel(c.Before) + " → " + permLabel(c.After)
+			case "-":
+				access = permLabel(c.Before)
+			default:
+				access = permLabel(c.After)
+			}
+			fmt.Fprintf(w, "  %s %s → %s %q [%s]\n", s.wrap(code, mark), c.AgentID, strings.ToLower(string(c.NodeType)), c.NodeName, access)
+		}
+		fmt.Fprintln(w)
+	}
+	section("Escalated", d.Escalations, "~", "31")
+	section("Newly reachable", d.NewlyReachable, "+", "33")
+	section("No longer reachable", d.NoLongerReachable, "-", "32")
 
-	if !diff.HasRegressions {
-		fmt.Fprintln(w, "✅ No security surface regressions detected.")
-		return
+	if len(d.NewFindings) > 0 {
+		fmt.Fprintln(w, "New findings:")
+		for _, f := range d.NewFindings {
+			fmt.Fprintf(w, "  %s %s  %s\n", s.severity(f.Severity), f.RuleID, f.Message)
+		}
+		fmt.Fprintln(w)
 	}
 
-	fmt.Fprintln(w, "⚠️  Security Surface Changes Detected:")
-	fmt.Fprintf(w, "  + Added Nodes: %d\n", len(diff.AddedNodes))
-	fmt.Fprintf(w, "  - Removed Nodes: %d\n", len(diff.RemovedNodes))
-	fmt.Fprintf(w, "  + New Capabilities: %d\n", len(diff.AddedEdges))
-	fmt.Fprintf(w, "  ⚡ Escalations: %d\n\n", len(diff.Escalations))
-
-	if len(diff.Escalations) > 0 {
-		fmt.Fprintln(w, "Permission Escalations:")
-		for _, esc := range diff.Escalations {
-			fmt.Fprintf(w, "  * %s -> %s [%s]\n", esc.SourceID, esc.TargetID, esc.Permission)
-		}
+	fmt.Fprintf(w, "Graph: +%d/-%d nodes, +%d/-%d edges\n", len(d.AddedNodes), len(d.RemovedNodes), len(d.AddedEdges), len(d.RemovedEdges))
+	if d.Regressions > 0 {
+		fmt.Fprintln(w, s.wrap("31;1", fmt.Sprintf("%d regression(s)", d.Regressions)))
+	} else {
+		fmt.Fprintln(w, s.wrap("32", "No regressions."))
 	}
 }
