@@ -50,6 +50,7 @@ func ScanAgentDefinitions(root string) ([]AgentDefinition, error) {
 		def.File = subagentDir + "/" + e.Name()
 		out = append(out, def)
 	}
+	return out, nil
 }
 
 // parseAgentFrontmatter reads `name` and `tools` from YAML frontmatter.
@@ -73,23 +74,6 @@ func parseAgentFrontmatter(doc string) (AgentDefinition, bool) {
 			if item, ok := strings.CutPrefix(trimmed, "- "); ok {
 				def.Tools = append(def.Tools, unquote(item))
 				continue
-			}
-			inToolList = false
-		}
-		if line == "" || line[0] == ' ' || line[0] == '\t' {
-			continue
-		}
-		key, value, found := strings.Cut(line, ":")
-		if !found {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		switch strings.TrimSpace(key) {
-		case "name":
-			def.Name = unquote(value)
-		case "tools":
-			def.Tools = []string{} // present, so the subagent is restricted
-			if value == "" {
 				inToolList = true
 				continue
 			}
@@ -138,6 +122,8 @@ func (d *discoverer) addAgentDefinitions(defs []AgentDefinition) {
 		}
 		id := parentID + "/" + def.Name
 		d.g.AddNode(&graph.Node{ID: id, Name: "Subagent " + def.Name, Type: graph.NodeAgent, Metadata: map[string]string{
+			graph.MetaFile:        def.File,
+			graph.MetaParentAgent: parentID,
 		}})
 		for _, t := range def.Tools {
 			server, tool, ok := parseMCPToolName(t)
