@@ -1,3 +1,5 @@
+package subcmds
+
 import (
 	"errors"
 	"flag"
