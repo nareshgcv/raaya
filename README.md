@@ -204,60 +204,20 @@ This makes security reachability part of the normal pull-request workflow.
 ## 🧠 Architecture
 
 ```text
-                    ┌─────────────────────────────┐
-                    │      AI Application         │
-                    │        Environment          │
-                    │                             │
-                    │ Source Code • MCP Config    │
-                    │ Prompts • Annotations       │
-                    │ Runtime / Live Services     │
-                    └──────────────┬──────────────┘
-                                   │
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │      Discovery Engine        │
-                    │                             │
-                    │  AST / MCP / Runtime        │
-                    │  Prompts / Annotations       │
-                    └──────────────┬──────────────┘
-                                   │
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │       Security Graph         │
-                    │                             │
-                    │  Agent                      │
-                    │  MCP Server                 │
-                    │  Tool                       │
-                    │  Resource                   │
-                    └──────────────┬──────────────┘
-                                   │
-                  ┌────────────────┼────────────────┐
-                  │                │                │
-                  ▼                ▼                ▼
-          ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-          │  Capability  │ │    Blast     │ │   Policy     │
-          │ Propagation  │ │    Radius    │ │  Evaluation  │
-          └───────┬──────┘ └───────┬──────┘ └───────┬──────┘
-                  │                │                │
-                  └────────────────┼────────────────┘
-                                   │
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │      Security Analysis      │
-                    │                             │
-                    │  Reachability               │
-                    │  Permission Escalation      │
-                    │  Surface Expansion          │
-                    │  Transitive Exposure        │
-                    └──────────────┬──────────────┘
-                                   │
-                 ┌─────────────────┼─────────────────┐
-                 │                 │                 │
-                 ▼                 ▼                 ▼
-          ┌────────────┐    ┌─────────────┐    ┌──────────────┐
-          │  Terminal  │    │ JSON / SARIF│    │  GitHub PR   │
-          │   Output   │    │   Reports   │    │   Comments   │
-          └────────────┘    └─────────────┘    └──────────────┘
+                                      Configs • Source • Subagents • (--live) MCP servers
+                    │
+               Discovery
+                    │
+     Graph: Agent → Server → Tool → Resource
+                    │
+        Capability propagation (reach)
+          │          │           │
+    Blast radius   Rules     Rego policies
+                RAAYA001–007   (-tags rego)
+          └──────────┼───────────┘
+     Findings  •  Diff (base vs head)  •  Fix
+                    │
+ Terminal • JSON • SARIF • Markdown • Mermaid/DOT
 
 ```
         
