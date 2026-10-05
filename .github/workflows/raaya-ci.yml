@@ -1,33 +1,42 @@
-name: Raaya Security Scan
+name: ci
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
-  scan:
-    name: Run Raaya Policy Engine
+  test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        tags: ["", "rego"]
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
+      - run: go vet -tags "${{ matrix.tags }}" ./...
+      - run: go test -race -tags "${{ matrix.tags }}" ./...
+      - run: go build -tags "${{ matrix.tags }}" ./cmd/raaya
 
-      - name: Build Raaya Binary
-        run: go build -o raaya ./cmd/raaya
-
-      - name: Execute Raaya Check (SARIF Export)
-        run: ./raaya check --format sarif > raaya-results.sarif
-        continue-on-error: true
-
-      - name: Upload SARIF report to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+  # Static scan only: --live would execute commands from the PR's configs.
+  capability-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          sarif_file: raaya-results.sarif
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o "$RUNNER_TEMP/raaya" ./cmd/raaya
+      - run: |
+          "$RUNNER_TEMP/raaya" diff "${{ github.event.pull_request.base.sha }}" \
+            --format markdown --output diff.md || status=$?
+          cat diff.md >> "$GITHUB_STEP_SUMMARY"
+          exit "${status:-0}"
