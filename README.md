@@ -285,7 +285,7 @@ raaya/
 ### From source
 
 ```bash
-git clone https://github.com/<YOUR_ORG>/raaya.git
+git clone https://github.com/nareshgcv/raaya.git
 
 cd raaya
 
@@ -303,8 +303,6 @@ Verify the installation:
 ```bash
 raaya --help
 ```
-
-> Replace `<YOUR_ORG>` with the GitHub organization or username hosting Raaya.
 
 ---
 
