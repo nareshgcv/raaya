@@ -92,6 +92,20 @@ func ComputeDiff(base, head *graph.Graph, threshold graph.PermissionLevel) *Diff
 		}
 	}
 
+	baseFindings := map[string]bool{}
+	for _, f := range Evaluate(base) {
+		baseFindings[f.Key()] = true
+	}
+	for _, f := range Evaluate(head) {
+		if f.RuleID == "RAAYA001" || f.RuleID == "RAAYA002" {
+			continue // already reported as reach changes
+		}
+		if !baseFindings[f.Key()] {
+			d.NewFindings = append(d.NewFindings, f)
+			if f.Severity == SevHigh {
+				d.Regressions++
+			}
+		}
 	}
 	return d
 }
