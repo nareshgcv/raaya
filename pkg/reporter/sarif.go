@@ -81,7 +81,7 @@ func sarifLevel(s analysis.Severity) string {
 	}
 }
 
-// SARIF writes findings as SARIF 2.1.0 for GitHub code scanning.
+// SARIF writes findings as SARIF 1.0.0 for GitHub code scanning.
 func SARIF(w io.Writer, findings []analysis.Finding, version string) error {
 	ruleList := []sarifRule{}
 	known := map[string]bool{}
@@ -110,8 +110,8 @@ func SARIF(w io.Writer, findings []analysis.Finding, version string) error {
 		results = append(results, res)
 	}
 	return JSON(w, sarifLog{
-		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
-		Version: "2.1.0",
+		Schema:  "https://json.schemastore.org/sarif-1.0.0.json",
+		Version: "1.0.0",
 		Runs: []sarifRun{{
 			Tool:    sarifTool{Driver: sarifDriver{Name: "raaya", Version: version, InformationURI: "https://github.com/nareshgcv/raaya", Rules: ruleList}},
 			Results: results,
