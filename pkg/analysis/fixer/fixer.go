@@ -32,6 +32,14 @@ type Skipped struct {
 	Server string `json:"server"`
 	EnvVar string `json:"env_var"`
 	Reason string `json:"reason"`
+}
+
+// Result of ExtractSecrets.
+type Result struct {
+	Changes []Change  `json:"changes"`
+	Skipped []Skipped `json:"skipped"`
+}
+
 // reference returns the env-var syntax each client expands in its config.
 // Claude Desktop does not expand variables, so its configs are skipped.
 func reference(agent, name string) (string, bool) {
