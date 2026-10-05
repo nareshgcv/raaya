@@ -1,63 +1,102 @@
+// Package subcmds implements raaya's commands. Each returns an exit code
+// (0 ok, 1 findings/regressions, 2 error) and an error.
 package subcmds
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/spf13/cobra"
-	"raaya/pkg/analysis"
-	"raaya/pkg/discovery"
-	"raaya/pkg/reporter"
+	"github.com/nareshgcv/raaya/pkg/analysis"
+	"github.com/nareshgcv/raaya/pkg/analysis/fixer"
+	"github.com/nareshgcv/raaya/pkg/config"
+	"github.com/nareshgcv/raaya/pkg/discovery"
+	"github.com/nareshgcv/raaya/pkg/reporter"
 )
 
-var CheckCmd = &cobra.Command{
-	Use:   "check",
-	Short: "Scan repository for AI agent and MCP security violations",
-	Run: func(cmd *cobra.Command, args []string) {
-		repoPath, _ := cmd.Flags().GetString("path")
-		if repoPath == "" {
-			repoPath = "."
+// Version is reported in SARIF output; main sets it.
+var Version = "dev"
+
+// Check scans the repository and reports findings.
+func Check(args []string) (int, error) {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	var dc config.Discovery
+	dc.Register(fs)
+	format := fs.String("format", "terminal", "output format: terminal, json, sarif, markdown")
+	failOn := fs.String("fail-on", "HIGH", "exit 1 if any finding is at or above this severity: HIGH, MEDIUM, LOW or none")
+	output := fs.String("output", "", "write the report to this file instead of stdout")
+	fix := fs.Bool("fix", false, "replace literal secrets in project MCP configs with environment-variable references")
+	var policies config.StringList
+	fs.Var(&policies, "policy", "Rego policy file (repeatable; needs a build with -tags rego)")
+	if _, err := config.ParseArgs(fs, args); err != nil {
+		return 2, err
+	}
+
+	var threshold analysis.Severity
+	if !strings.EqualFold(*failOn, "none") {
+		var ok bool
+		if threshold, ok = analysis.ParseSeverity(*failOn); !ok {
+			return 2, fmt.Errorf("invalid --fail-on %q", *failOn)
 		}
+	}
 
-		// 1. Hybrid AST & Config Discovery
-		scanner := discovery.NewHybridScanner(repoPath)
-		sg, err := scanner.BuildGraphFromASTAndConfig("mcp.json")
-		if err != nil {
-			fmt.Printf("Warning: Failed to parse MCP configs: %v\n", err)
+	if *fix {
+		if err := applyFixes(dc.Root); err != nil {
+			return 2, err
 		}
+	}
 
-		// Also scan .cursor/mcp.json if present
-		if cursorGraph, err := scanner.BuildGraphFromASTAndConfig(".cursor/mcp.json"); err == nil {
-			for id, node := range cursorGraph.Nodes {
-				sg.AddNode(node)
-			}
-			for _, edge := range cursorGraph.Edges {
-				sg.AddEdge(edge.From, edge.To)
-			}
-		}
+	ctx := context.Background()
+	g, err := discovery.Discover(ctx, dc.Options())
+	if err != nil {
+		return 2, err
+	}
+	findings := analysis.Evaluate(g)
+	extra, err := analysis.EvaluatePolicies(ctx, policies, analysis.NewPolicyInput(g, findings))
+	if err != nil {
+		return 2, err
+	}
+	findings = append(findings, extra...)
+	analysis.SortFindings(findings)
 
-		// 2. Propagate Transitive Capabilities (Tools/Resources -> MCPServers -> Agents)
-		sg.PropagateTransitiveCapabilities()
-
-		// 3. Evaluate Policy Rules via Dual Engine & Rego Evaluator
-		evaluator := analysis.NewRegoEvaluator("")
-		violations, err := evaluator.Evaluate(context.Background(), sg, nil)
-		if err != nil {
-			fmt.Printf("Error during policy evaluation: %v\n", err)
-			os.Exit(1)
-		}
-
-		// 4. Render Terminal Report
-		reporter.PrintTerminalReport(violations)
-
-		// Exit code 1 if critical policy violations exist
-		if len(violations) > 0 {
-			os.Exit(1)
-		}
-	},
+	w, closeOut, err := config.OpenOutput(*output)
+	if err != nil {
+		return 2, err
+	}
+	switch strings.ToLower(*format) {
+	case "terminal", "text":
+	default:
+		err = fmt.Errorf("unknown --format %q", *format)
+	}
+	if cerr := closeOut(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return 2, err
+	}
+	if threshold != "" && analysis.AnyAtOrAbove(findings, threshold) {
+		return 1, nil
+	}
+	return 0, nil
 }
 
-func init() {
-	CheckCmd.Flags().StringP("path", "p", ".", "Path to the repository root")
+// applyFixes rewrites literal secrets and explains what the user must do
+// next. It prints variable names only, never values.
+func applyFixes(root string) error {
+	res, err := fixer.ExtractSecrets(root, true)
+	if err != nil {
+		return fmt.Errorf("fix: %w", err)
+	}
+	for _, c := range res.Changes {
+		fmt.Fprintf(os.Stderr, "fixed: %s (%s): %s now reads %s\n", c.File, c.Server, c.EnvVar, c.Reference)
+	}
+	for _, s := range res.Skipped {
+		fmt.Fprintf(os.Stderr, "not fixed: %s (%s): %s: %s\n", s.File, s.Server, s.EnvVar, s.Reason)
+	}
+	if len(res.Changes) > 0 {
+		fmt.Fprintln(os.Stderr, "Set those variables from your secret manager, and rotate the old values: they remain in git history.")
+	}
+	return nil
 }
