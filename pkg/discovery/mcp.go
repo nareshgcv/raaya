@@ -32,6 +32,53 @@ func (s ServerSpec) Transport() string {
 	switch {
 	case s.Command != "":
 		return "stdio"
+	case s.URL != "":
+		return "http"
+	default:
+		return "unknown"
+	}
+}
+
+// ConfigFile is an MCP client configuration file and the agent that loads it.
+type ConfigFile struct {
+	Path  string // absolute path
+	Agent string // agent key, e.g. "claude-code"
+	Scope string // "project", "user" or "custom"
+}
+
+var agentNames = map[string]string{
+	"claude-code":    "Claude Code",
+	"claude-desktop": "Claude Desktop",
+	"cursor":         "Cursor",
+	"vscode":         "VS Code",
+	"generic":        "MCP client (mcp.json)",
+	"custom":         "Custom config",
+}
+
+// AgentName is the display name for an agent key.
+func AgentName(key string) string {
+	if n, ok := agentNames[key]; ok {
+		return n
+	}
+	return key
+}
+
+var projectConfigNames = []struct{ rel, agent string }{
+	{".mcp.json", "claude-code"},
+	{"mcp.json", "generic"},
+	{".cursor/mcp.json", "cursor"},
+	{".vscode/mcp.json", "vscode"},
+	{"claude_desktop_config.json", "claude-desktop"},
+}
+
+// ProjectConfigs returns the MCP configs checked into the repository at root.
+func ProjectConfigs(root string) []ConfigFile {
+	var out []ConfigFile
+	for _, c := range projectConfigNames {
+		p := filepath.Join(root, filepath.FromSlash(c.rel))
+		if fileExists(p) {
+			out = append(out, ConfigFile{Path: p, Agent: c.agent, Scope: "project"})
+		}
 	}
 	return out
 }
@@ -67,6 +114,16 @@ func UserConfigs() []ConfigFile {
 	return out
 }
 
+func fileExists(p string) bool {
+	if p == "" {
+		return false
+	}
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+// ParseConfig reads an MCP client config. It accepts the "mcpServers" layout
+// (Claude, Cursor) and the "servers" layout (VS Code), and tolerates the
 // comments and trailing commas that VS Code allows.
 func ParseConfig(path string) ([]ServerSpec, error) {
 	data, err := os.ReadFile(path)
@@ -195,11 +252,19 @@ func (d *discoverer) addConfig(cf ConfigFile) error {
 // serverID keys servers by name, so the same server configured for two
 // clients is one node. The same name with a different command gets its own.
 func (d *discoverer) serverID(s ServerSpec, cf ConfigFile) string {
-	id := "server:" + s.Name
 	existing, ok := d.g.Nodes[id]
 	if !ok {
 		return id
 	}
+	if existing.Metadata["command"] == s.Command && existing.Metadata[graph.MetaURL] == RedactURL(s.URL) {
+		return id
+	}
+	return "server:" + cf.Agent + "/" + s.Name
+}
+
+// inferFromSpec derives resources and risk markers from a server entry.
+// Secret values are never stored, only the names that hold them.
+func (d *discoverer) inferFromSpec(serverID string, s ServerSpec) {
 	server := d.g.Nodes[serverID]
 	var secrets []string
 
@@ -254,6 +319,9 @@ func (d *discoverer) recordSourceDirs(serverID string, s ServerSpec, configDir s
 		}
 		p := arg
 		if !filepath.IsAbs(p) {
+			p = filepath.Join(base, p)
+		}
+		info, err := os.Stat(p)
 		if err != nil {
 			continue
 		}
@@ -321,6 +389,31 @@ var credentialRules = []credentialRule{
 	{regexp.MustCompile(`^GITLAB_`), "gitlab"},
 	{regexp.MustCompile(`^(AWS|AMAZON)_`), "aws"},
 	{regexp.MustCompile(`^(GOOGLE|GCP|GCLOUD)_`), "gcp"},
+	{regexp.MustCompile(`^AZURE_`), "azure"},
+	{regexp.MustCompile(`^SLACK_`), "slack"},
+	{regexp.MustCompile(`^STRIPE_`), "stripe"},
+	{regexp.MustCompile(`^(KUBECONFIG|KUBE_)`), "kubernetes"},
+	{regexp.MustCompile(`^(DATABASE_URL|POSTGRES|PG[A-Z]|MYSQL_|MONGO|REDIS_)`), "database"},
+}
+
+var secretName = regexp.MustCompile(`(TOKEN|SECRET|API_?KEY|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)`)
+
+// CredentialResource returns the resource an environment variable grants a
+// server access to, if its name suggests one.
+func CredentialResource(envName string) (string, bool) {
+	upper := strings.ToUpper(envName)
+	for _, r := range credentialRules {
+		if r.pattern.MatchString(upper) {
+			return r.resource, true
+		}
+	}
+	if secretName.MatchString(upper) {
+		return "credential:" + upper, true
+	}
+	return "", false
+}
+
+var (
 	placeholderValue = regexp.MustCompile(`(?i)^\s*$|\$\{|\{\{|^<.*>$|^(your|my|example|changeme|xxx|placeholder|todo|redacted|dummy)`)
 	knownTokenPrefix = regexp.MustCompile(`^(ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|sk-|sk_live_|rk_live_|xox[abpr]-|AKIA[0-9A-Z]{12}|AIza)`)
 )
@@ -356,6 +449,17 @@ func URLHasCredentials(raw string) bool {
 		if pw, ok := u.User.Password(); ok && !placeholderValue.MatchString(pw) {
 			return true
 		}
+	}
+	for k, vs := range u.Query() {
+		if secretName.MatchString(strings.ToUpper(k)) {
+			for _, v := range vs {
+				if !placeholderValue.MatchString(v) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // RedactURL strips credentials, query and fragment so a URL is safe to report.
@@ -392,6 +496,12 @@ func UnpinnedPackage(command string, args []string) (string, bool) {
 	switch runner {
 	case "npx", "bunx", "pnpx":
 		pkg := packageArg(args, []string{"-p", "--package"}, []string{"--registry", "--cache", "-c", "--call"})
+		if pkg == "" {
+			return "", false
+		}
+		name := strings.TrimPrefix(pkg, "@") // scoped packages start with @
+		at := strings.LastIndex(name, "@")
+		if at < 0 {
 			return pkg, true
 		}
 		v := name[at+1:]
@@ -446,6 +556,12 @@ var (
 
 // PathArgs returns arguments that look like filesystem paths handed to a
 // server (for example the allowed directories of a filesystem server).
+// Script files the server runs from are excluded.
+func PathArgs(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if a == "" || strings.HasPrefix(a, "-") || scriptExts[strings.ToLower(filepath.Ext(a))] {
+			continue
 		}
 		switch {
 		case a == "." || a == "~",
