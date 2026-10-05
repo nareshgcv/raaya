@@ -2,44 +2,48 @@ package rules
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
-	"raaya/pkg/graph"
+	"github.com/nareshgcv/raaya/pkg/graph"
 )
 
-type Severity string
-
-const (
-	SeverityCritical Severity = "CRITICAL"
-	SeverityHigh     Severity = "HIGH"
-	SeverityMedium   Severity = "MEDIUM"
-)
-
-type Finding struct {
-	RuleID           string   `json:"rule_id"`
-	Severity         Severity `json:"severity"`
-	Message          string   `json:"message"`
-	AssetID          string   `json:"asset_id"`
-	FilePath         string   `json:"file_path"`
-	AutofixAvailable bool     `json:"autofix_available"`
-}
-
-type HardcodedSecretRule struct{}
-
-func (r *HardcodedSecretRule) ID() string { return "RAAYA-001-PLAINTEXT-SECRET" }
-
-func (r *HardcodedSecretRule) Evaluate(sg *graph.SecurityGraph) []Finding {
-	var findings []Finding
-	for _, node := range sg.Nodes {
-		if node.Kind == graph.KindSecret {
-			findings = append(findings, Finding{
-				RuleID:           r.ID(),
-				Severity:         SeverityCritical,
-				Message:          fmt.Sprintf("Plaintext credential detected in key '%s'", node.Name),
-				AssetID:          node.ID,
-				FilePath:         node.SourceFile,
-				AutofixAvailable: true,
-			})
+// RAAYA003: literal credentials in MCP configs. Discovery records only the
+// names of the env vars/headers holding them, never the values.
+func hardcodedSecrets(g *graph.Graph) []Finding {
+	var out []Finding
+	for _, s := range g.NodesOfType(graph.NodeMCPServer) {
+		if v := s.Metadata[graph.MetaHardcodedSecrets]; v != "" {
+			out = append(out, newFinding(g, "RAAYA003", SevHigh, "", s.ID,
+				fmt.Sprintf("Server %q has a literal credential in its config (%s); reference an environment variable or input instead, and rotate it because it is in git history", s.Name, v)))
 		}
 	}
-	return findings
+	return out
+}
+
+// RAAYA007: a remote server over plain http sends tool calls, results and any
+// Authorization header in cleartext. Loopback addresses are exempt.
+func plaintextRemoteServers(g *graph.Graph) []Finding {
+	var out []Finding
+	for _, s := range g.NodesOfType(graph.NodeMCPServer) {
+		raw := s.Metadata[graph.MetaURL]
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Scheme, "http") || isLoopback(u.Hostname()) {
+			continue
+		}
+		out = append(out, newFinding(g, "RAAYA007", SevHigh, "", s.ID,
+			fmt.Sprintf("Server %q is reached over plain http (%s); use https", s.Name, raw)))
+	}
+	return out
+}
+
+func isLoopback(host string) bool {
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	}
+	return strings.HasPrefix(host, "127.")
 }
