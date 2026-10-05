@@ -32,6 +32,13 @@ func TestExtractSecretsRewritesInPlace(t *testing.T) {
 
 	dry, err := ExtractSecrets(root, false)
 	if err != nil || len(dry.Changes) != 1 {
+		t.Fatalf("dry run: %+v %v", dry, err)
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), token) {
+		t.Fatal("dry run must not modify the file")
+	}
+
+	res, err := ExtractSecrets(root, true)
 	if err != nil || len(res.Changes) != 1 || res.Changes[0].Reference != "${GITHUB_PERSONAL_ACCESS_TOKEN}" {
 		t.Fatalf("got %+v %v", res, err)
 	}
