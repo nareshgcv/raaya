@@ -1,106 +1,136 @@
+// Package fixer applies safe, mechanical remediations to MCP configs.
+//
+// It never moves a secret anywhere. A literal credential in a config's env
+// block is replaced with a reference to an environment variable of the same
+// name; you set that variable from your secret manager. The old value is
+// still in git history, so it must be rotated regardless.
 package fixer
 
 import (
-	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
+	"regexp"
+	"sort"
 
-	"github.com/raaya/pkg/graph"
+	"github.com/nareshgcv/raaya/pkg/discovery"
 )
 
-// FixType defines the category of auto-remediation to execute.
-type FixType string
-
-const (
-	FixExtractSecret FixType = "EXTRACT_SECRET"
-	FixDisableTool   FixType = "DISABLE_TOOL"
-)
-
-// RemediationResult tracks the status of an applied fix.
-type RemediationResult struct {
-	FindingID string   `json:"finding_id"`
-	FixType   FixType  `json:"fix_type"`
-	FilePath  string   `json:"file_path"`
-	Applied   bool     `json:"applied"`
-	Message   string   `json:"message"`
-	Diff      []string `json:"diff,omitempty"`
+// Change is one rewritten secret. It deliberately carries no value.
+type Change struct {
+	File      string `json:"file"`
+	Server    string `json:"server"`
+	EnvVar    string `json:"env_var"`
+	Reference string `json:"reference"`
 }
 
-// Fixer manages workspace remediation actions.
-type Fixer struct {
-	WorkspaceRoot string
-}
-
-// NewFixer initializes a Fixer instance for a given workspace root.
-func NewFixer(workspaceRoot string) *Fixer {
-	return &Fixer{
-		WorkspaceRoot: workspaceRoot,
+// Skipped is a secret the fixer found but would not rewrite.
+type Skipped struct {
+	File   string `json:"file"`
+	Server string `json:"server"`
+	EnvVar string `json:"env_var"`
+	Reason string `json:"reason"`
+// reference returns the env-var syntax each client expands in its config.
+// Claude Desktop does not expand variables, so its configs are skipped.
+func reference(agent, name string) (string, bool) {
+	switch agent {
+	case "claude-code", "generic", "custom":
+		return "${" + name + "}", true
+	case "cursor", "vscode":
+		return "${env:" + name + "}", true
+	default:
+		return "", false
 	}
 }
 
-// ExtractSecretToEnv removes hardcoded secret values from a file and appends them to a .env file.
-func (f *Fixer) ExtractSecretToEnv(findingID string, targetNode *graph.Node, secretKey string, secretVal string) (*RemediationResult, error) {
-	if targetNode.Location == nil || targetNode.Location.FilePath == "" {
-		return nil, fmt.Errorf("node %s lacks valid file location metadata", targetNode.ID)
-	}
-
-	targetPath := targetNode.Location.FilePath
-
-	// 1. Append secret key and value to .env
-	envPath := fmt.Sprintf("%s/.env", strings.TrimRight(f.WorkspaceRoot, "/"))
-	envEntry := fmt.Sprintf("%s=%s\n", secretKey, secretVal)
-
-	envFile, err := os.OpenFile(envPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open .env for writing: %w", err)
-	}
-	defer envFile.Close()
-
-	if _, err := envFile.WriteString(envEntry); err != nil {
-		return nil, fmt.Errorf("failed to append key to .env: %w", err)
-	}
-
-	// 2. Replace hardcoded secret in target file with environment variable reference
-	if err := f.replaceInFile(targetPath, secretVal, fmt.Sprintf("${%s}", secretKey)); err != nil {
-		return nil, fmt.Errorf("failed to sanitize source file %s: %w", targetPath, err)
-	}
-
-	return &RemediationResult{
-		FindingID: findingID,
-		FixType:   FixExtractSecret,
-		FilePath:  targetPath,
-		Applied:   true,
-		Message:   fmt.Sprintf("Successfully extracted secret '%s' to .env and sanitized source code.", secretKey),
-		Diff: []string{
-			fmt.Sprintf("- %s", secretVal),
-			fmt.Sprintf("+ ${%s}", secretKey),
-		},
-	}, nil
-}
-
-// replaceInFile helper replaces targeted content line-by-line.
-func (f *Fixer) replaceInFile(filePath string, targetStr string, replacementStr string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, targetStr) {
-			line = strings.ReplaceAll(line, targetStr, replacementStr)
+// ExtractSecrets replaces literal credentials in the env blocks of the
+// project's MCP configs with environment-variable references. With
+// write=false it only reports what it would change.
+func ExtractSecrets(root string, write bool) (Result, error) {
+	res := Result{Changes: []Change{}, Skipped: []Skipped{}}
+	for _, cf := range discovery.ProjectConfigs(root) {
+		specs, err := discovery.ParseConfig(cf.Path)
+		if err != nil {
+			return res, err
 		}
-		lines = append(lines, line)
-	}
+		data, err := os.ReadFile(cf.Path)
+		if err != nil {
+			return res, err
+		}
+		rel, err := filepath.Rel(root, cf.Path)
+		if err != nil {
+			rel = cf.Path
+		}
+		rel = filepath.ToSlash(rel)
 
-	if err := scanner.Err(); err != nil {
-		return err
-	}
+		updated := data
+		for _, s := range specs {
+			names := make([]string, 0, len(s.Env))
+			for name := range s.Env {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if !discovery.LooksLikeHardcodedSecret(name, s.Env[name]) {
+					continue
+				}
+				ref, ok := reference(cf.Agent, name)
+				if !ok {
+					res.Skipped = append(res.Skipped, Skipped{rel, s.Name, name, "this client does not expand environment variables in its config"})
+					continue
+				}
+				next, n := replaceEnvValue(updated, name, s.Env[name], ref)
+				if n == 0 {
+					res.Skipped = append(res.Skipped, Skipped{rel, s.Name, name, "value is encoded unusually; edit it by hand"})
+					continue
+				}
+				updated = next
+				res.Changes = append(res.Changes, Change{File: rel, Server: s.Name, EnvVar: name, Reference: ref})
+			}
+		}
 
-	output := strings.Join(lines, "\n") + "\n"
-	return os.WriteFile(filePath, []byte(output), 0644)
+		if write && !bytes.Equal(updated, data) {
+			info, err := os.Stat(cf.Path)
+			if err != nil {
+				return res, err
+			}
+			if err := os.WriteFile(cf.Path, updated, info.Mode().Perm()); err != nil {
+				return res, fmt.Errorf("write %s: %w", rel, err)
+			}
+		}
+	}
+	return res, nil
+}
+
+// replaceEnvValue rewrites `"NAME": "<value>"` to `"NAME": "<ref>"` in place,
+// leaving the rest of the file's formatting untouched.
+func replaceEnvValue(data []byte, name, value, ref string) ([]byte, int) {
+	encodedValue, err := jsonString(value)
+	if err != nil {
+		return data, 0
+	}
+	encodedRef, err := jsonString(ref)
+	if err != nil {
+		return data, 0
+	}
+	pattern := regexp.MustCompile(`("` + regexp.QuoteMeta(name) + `"\s*:\s*)` + regexp.QuoteMeta(encodedValue))
+	count := 0
+	out := pattern.ReplaceAllFunc(data, func(match []byte) []byte {
+		count++
+		prefix := pattern.FindSubmatch(match)[1]
+		return append(append([]byte{}, prefix...), encodedRef...)
+	})
+	return out, count
+}
+
+func jsonString(s string) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
+		return "", err
+	}
+	return string(bytes.TrimRight(buf.Bytes(), "\n")), nil
 }
