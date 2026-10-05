@@ -1,1 +1,8 @@
+# Secrets never belong in the repository.
+.env
+.env.*
+!.env.example
 
+# Build and scan output
+/raaya
+*.sarif
