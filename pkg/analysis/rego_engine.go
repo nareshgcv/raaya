@@ -1,34 +1,61 @@
+//go:build rego
+
 package analysis
 
 import (
 	"context"
-	
-	"raaya/pkg/analysis/policies"
-	"raaya/pkg/graph"
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/nareshgcv/raaya/pkg/analysis/policies"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
-type RegoEngine struct{}
+// RegoEnabled reports whether this binary can evaluate Rego policies.
+const RegoEnabled = true
 
-func NewRegoEngine() *RegoEngine {
-	return &RegoEngine{}
-}
-
-func (r *RegoEngine) Evaluate(ctx context.Context, g *graph.Graph) ([]Finding, error) {
-	_ = policies.DefaultPolicy // Access embedded default.rego bytes
-	
-	var findings []Finding
-	// Check for unauthenticated tool exposure across edges
-	for _, edge := range g.Edges {
-		if edge.Permission == graph.PermAdmin && edge.Transitive {
-			findings = append(findings, Finding{
-				ID:         "RAAYA-001",
-				RuleID:     "transitive-admin-access",
-				Severity:   "HIGH",
-				Message:    "Transitive path exposes ADMIN privilege without explicit check.",
-				TargetNode: edge.TargetID,
-			})
-		}
+// EvaluatePolicies evaluates the bundled default policy plus files against
+// input and returns everything in data.raaya.deny as findings.
+func EvaluatePolicies(ctx context.Context, files []string, input PolicyInput) ([]Finding, error) {
+	// Round-trip through JSON so policies see exactly the documented shape.
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, err
 	}
 
-	return findings, nil
+	opts := []func(*rego.Rego){
+		rego.Query("data.raaya.deny"),
+		rego.Module("raaya/default.rego", policies.Default),
+		rego.Input(doc),
+	}
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, rego.Module(f, string(src)))
+	}
+
+	rs, err := rego.New(opts...).Eval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rego: %w", err)
+	}
+	var out []Finding
+	for _, result := range rs {
+		for _, expr := range result.Expressions {
+			items, ok := expr.Value.([]any)
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				out = append(out, policyFinding(item))
+			}
+		}
+	}
+	return out, nil
 }
