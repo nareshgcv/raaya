@@ -204,7 +204,7 @@ This makes security reachability part of the normal pull-request workflow.
 ## 🧠 Architecture
 
 ```text
-                                      Configs • Source • Subagents • (--live) MCP servers
+Configs • Source • Subagents • (--live) MCP servers
                     │
                Discovery
                     │
