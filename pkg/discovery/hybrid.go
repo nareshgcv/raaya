@@ -242,6 +242,7 @@ func (d *discoverer) displayPath(p string) string {
 	if rel, err := filepath.Rel(d.root, p); err == nil && !strings.HasPrefix(rel, "..") {
 		return filepath.ToSlash(rel)
 	}
+	if home, err := os.UserHomeDir(); err == nil {
 		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
 			return "~/" + filepath.ToSlash(rel)
 		}
