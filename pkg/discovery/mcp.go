@@ -252,14 +252,17 @@ func (d *discoverer) addConfig(cf ConfigFile) error {
 // serverID keys servers by name, so the same server configured for two
 // clients is one node. The same name with a different command gets its own.
 func (d *discoverer) serverID(s ServerSpec, cf ConfigFile) string {
+	id := "server:" + s.Name // shared ID: no agent here
+
 	existing, ok := d.g.Nodes[id]
 	if !ok {
-		return id
+		return id // first time we see this name
 	}
-	if existing.Metadata["command"] == s.Command && existing.Metadata[graph.MetaURL] == RedactURL(s.URL) {
-		return id
+	if existing.Metadata["command"] == s.Command &&
+		existing.Metadata[graph.MetaURL] == RedactURL(s.URL) {
+		return id // same server in another client → same node
 	}
-	return "server:" + cf.Agent + "/" + s.Name
+	return "server:" + cf.Agent + "/" + s.Name // name clash, different server
 }
 
 // inferFromSpec derives resources and risk markers from a server entry.
