@@ -204,21 +204,25 @@ This makes security reachability part of the normal pull-request workflow.
 ## 🧠 Architecture
 
 ```text
-Configs • Source • Subagents • (--live) MCP servers
-                    │
-               Discovery
-                    │
-     Graph: Agent → Server → Tool → Resource
-                    │
-        Capability propagation (reach)
-          │          │           │
-    Blast radius   Rules     Rego policies
-                RAAYA001–007   (-tags rego)
-          └──────────┼───────────┘
-     Findings  •  Diff (base vs head)  •  Fix
-                    │
- Terminal • JSON • SARIF • Markdown • Mermaid/DOT
-
+ Configs (project + user) • Source • Subagents • (--live) MCP servers
+                              │
+                          Discovery
+     credentials • secrets • unpinned pkgs • broad paths • annotations
+                              │
+              Graph: Agent → Server → Tool → Resource
+                  READ • WRITE • EXECUTE • ADMIN
+                              │
+                 Capability propagation (reach)
+            │                 │                 │
+       Blast radius         Rules          Rego policies
+                        RAAYA001–007        (-tags rego)
+            └─────────────────┼─────────────────┘
+                              │
+     Findings  •  Diff (base vs head)  •  Fix (--fix secrets)
+                              │
+                  --fail-on gate → exit 0 / 1
+                              │
+      Terminal • JSON • SARIF • Markdown  │  Mermaid/DOT (graph)
 ```
         
 ---
