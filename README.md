@@ -171,33 +171,28 @@ Raaya compares security graphs across Git revisions.
 For example:
 
 ```diff
-Agent → MCP → Database
-             READ
+Agent → MCP → Database   READ
 ```
 
 becoming:
 
 ```diff
-Agent → MCP → Database
-             READ
-             WRITE
+  Agent → MCP → Database   WRITE       
 ```
 
-can be detected as a capability escalation.
+is reported as a capability escalation (READ → WRITE).
 
-Raaya can identify changes such as:
+`raaya diff` compares each agent's full reach between two revisions and reports:
 
-* New Agent → Tool paths
-* New MCP servers
-* New tools
-* New resources
-* Permission escalation
-* Newly reachable resources
-* New `EXECUTE` capabilities
-* New `ADMIN` capabilities
-* Expanded transitive capability paths
+* Newly reachable tools and resources, including ones several hops away
+* Permission escalations (e.g. READ → WRITE, WRITE → EXECUTE)
+* Added and removed MCP servers, tools, resources and edges
+* Tools and resources no longer reachable
+* New findings, such as a hardcoded secret or an unpinned server package
 
-This makes security reachability part of the normal pull-request workflow.
+Escalations, new reach at or above the threshold, and new HIGH findings
+count as regressions and fail the check, so security reachability
+becomes part of the normal pull-request workflow.
 
 ---
 
