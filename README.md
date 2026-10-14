@@ -1,18 +1,21 @@
-# Raaya 🛡️
 
-**Security reachability scanner for AI agents and Model Context Protocol (MCP) integrations.**
+# Raaya — Security Reachability for AI Agents
 
-Raaya maps how capabilities flow through your AI agent ecosystem — from **Agents → MCP Servers → Tools → Resources** — and identifies security-surface expansion, excessive permissions, and transitive blast radius.
+**Understand what your AI agents can reach, how their capabilities propagate, and how security exposure changes.**
 
-It is designed to bring security visibility to AI agent infrastructure in the same way traditional security tooling maps dependencies, permissions, and attack surfaces.
+Raaya is a security reachability scanner for AI agents and Model Context Protocol (MCP) integrations.
 
----
+It maps relationships between **Agents → MCP Servers → Tools → Resources** to identify potential security-surface expansion, excessive permissions, and transitive blast radius.
+
+Raaya brings security visibility to AI agent infrastructure, helping developers and security teams understand the potential impact of agent configurations, tool integrations, and changes across their environments.
 
 ## Why Raaya?
 
-AI agents increasingly connect to MCP servers, tools, APIs, files, databases, and other runtime resources.
+AI agents increasingly connect to MCP servers, tools, APIs, filesystems, databases, source repositories, and cloud services.
 
-A seemingly harmless change can create an unexpected capability path:
+A seemingly small configuration or dependency change can introduce a new capability path or alter the code executing with an agent's existing access.
+
+For example:
 
 ```text
 Agent
@@ -27,7 +30,7 @@ Tool
 Resource
 ```
 
-For example:
+A coding agent might have a capability graph like this:
 
 ```text
 Coding Agent
@@ -41,15 +44,22 @@ Coding Agent
                        └──► Production Environment
 ```
 
-Raaya makes these relationships explicit and answers questions such as:
+The diagram illustrates potential reachability; actual access depends on credentials, permissions, runtime behavior, and environmental controls.
 
-* What can this agent ultimately access?
-* Which tools can reach sensitive resources?
-* What capabilities propagate transitively?
-* What happens if an MCP server or tool is compromised?
-* Did a pull request introduce a new security capability?
-* Did a change escalate `READ` access to `WRITE` or `EXECUTE`?
-* Which downstream resources are exposed by a compromised component?
+Raaya helps answer critical security questions:
+
+* **Reachability:** What resources could an agent or its tools potentially access?
+* **Capability propagation:** Which capabilities may be reachable transitively?
+* **Exposure:** Which sensitive resources could be affected if a component were compromised?
+* **Change analysis:** Did a pull request introduce a new capability path?
+* **Privilege escalation:** Did the modeled capabilities expand from READ to WRITE or EXECUTE?
+* **Blast radius:** Which downstream resources could be affected by a compromised component?
+
+## From visibility to enforcement
+
+Raaya is designed to turn security analysis into actionable engineering workflows, including configuration discovery, capability graph analysis, policy evaluation, change comparisons, structured findings, and CI enforcement.
+
+The goal is simple: help teams identify and understand AI-agent security exposure before it becomes an operational problem.
 
 ---
 
