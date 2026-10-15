@@ -60,6 +60,19 @@ Raaya helps answer critical security questions:
 Raaya is designed to turn security analysis into actionable engineering workflows, including configuration discovery, capability graph analysis, policy evaluation, change comparisons, structured findings, and CI enforcement.
 
 The goal is simple: help teams identify and understand AI-agent security exposure before it becomes an operational problem.
+____
+## Where Raaya fits
+
+Raaya complements existing AI security tools by focusing on how proposed changes affect agent access before merge.
+
+| Category                               | Example           | Primary focus                                                                                                                      |
+| -------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| MCP security scanners                  | Cisco MCP Scanner | Detect security risks in MCP servers, tools, prompts, and implementations.                                                         |
+| AI supply-chain and reachability tools | agent-bom         | Inventory AI components and analyze vulnerabilities, dependencies, credentials, reachability, and potential blast radius.          |
+| MCP gateways                           | Pomerium          | Enforce authentication, authorization, and tool-call policies at runtime.                                                          |
+| **Raaya**                              | —                 | **Analyze how proposed changes affect modeled agent reachability and capability exposure, and flag risky expansion before merge.** |
+
+Raaya is designed to complement these controls, not replace them. Its focus is making agent-access changes visible, explainable, and reviewable within the pull-request workflow.
 
 ---
 
